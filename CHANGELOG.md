@@ -14,6 +14,10 @@ the version numbers [Semantic Versioning](https://semver.org/).
   recovery.
 
 ### Added
+- Keys toggle the LOW, MID and HIGH kills of each player in the two-player
+  layout. Player A uses Y, A and Q. Player B uses X, S and W. Preferences ›
+  Keyboard lists the keys under Player A and Player B, where you can change
+  them.
 - Right-clicking the rbxport version in the status bar opens the current log
   in the operating system's default log viewer.
 - On a computer with no rekordbox library, the app asks whether to create a
@@ -25,6 +29,9 @@ the version numbers [Semantic Versioning](https://semver.org/).
   before restoring, so the right backup is easy to pick.
 
 ### Changed
+- The EQ kills use four keys from the rekordbox preset. Thus four commands
+  have new keys. Quantize is T. Memory Cue 1 is E. Memory Cue 2 is U.
+  Delete Memory Cue is V. Player B uses the same keys with shift.
 - Restoring a backup moved to the separate RBXport Restore app, which can put
   back the whole backup or only some of it. Preferences › Backups creates and
   deletes backups, and says where to restore them.

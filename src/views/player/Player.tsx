@@ -2244,7 +2244,7 @@ export const Player = memo(function Player({
                 type="button"
                 className={styles.step}
                 aria-label="Delete memory cue"
-                title={tip(memoryCueEditReason ?? "Delete Memory Cue (X)")}
+                title={tip(memoryCueEditReason ?? "Delete Memory Cue (V)")}
                 disabled={!memory.canEdit}
                 onClick={memory.deleteAtHead}
               >

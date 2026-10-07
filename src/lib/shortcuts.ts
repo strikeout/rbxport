@@ -29,7 +29,9 @@ export type Action =
   // The deck. Every key below is rekordbox's own, transcribed from the Export
   // preset in `KeyMappings/rekordbox_0000000000030.mappings` — the key map the
   // mode we clone ships with, not a guess at what feels natural. The same
-  // actions with shift are Player B's.
+  // actions with shift are Player B's. Four keys differ from the preset: the
+  // EQ kills below took Q, A, S and X, so Quantize is on T, Memory Cue 1 on
+  // E, Memory Cue 2 on U and Delete Memory Cue on V.
   | "playPause"
   | "cue"
   | "quantize"
@@ -39,8 +41,8 @@ export type Action =
   | "showHotCues"
   | "showInfo"
   // The MEMORY cluster: M stores the cue point as a memory cue, B and N call
-  // the one before and after the playhead, X deletes the one it is on, and
-  // A to ; call the first ten by number.
+  // the one before and after the playhead, V deletes the one it is on, and
+  // E, U and D to ; call the first ten by number.
   | "memoryCue"
   | "previousMemoryCue"
   | "nextMemoryCue"
@@ -97,7 +99,12 @@ export type Action =
   | "adjustGrid"
   | "shiftGridLeft"
   | "shiftGridRight"
-  | "shiftGridToCenter";
+  | "shiftGridToCenter"
+  // The mixer's EQ kills. They are this app's own, not the preset's: Y, A
+  // and Q are Player A's LOW, MID and HIGH, and X, S and W are Player B's.
+  | "killLow"
+  | "killMid"
+  | "killHigh";
 
 /**
  * The pad a hot cue action names, and whether it clears rather than sets.
@@ -365,7 +372,7 @@ export interface Binding {
    */
   command?: string;
   /** Where the Keyboard pane files a binding that is this app's own. */
-  pane?: "Browse" | "View" | "Track" | "File" | "General";
+  pane?: "Browse" | "View" | "Track" | "File" | "General" | "Player A" | "Player B";
   /** A second chord for the same thing, not listed in the pane. */
   alias?: true;
 }
@@ -373,7 +380,7 @@ export interface Binding {
 /** Player A's rows: Player B's are the same with shift, `31xx` for `30xx`. */
 const PLAYER_A: readonly Omit<Binding, "id" | "group" | "deck">[] = [
   { label: "Play/Pause", chord: { key: " " }, action: "playPause", command: "3006" },
-  { label: "Quantize", chord: { key: "q" }, action: "quantize", command: "301c" },
+  { label: "Quantize", chord: { key: "t" }, action: "quantize", command: "301c" },
   { label: "Cue", chord: { key: "c" }, action: "cue", command: "3007" },
   { label: "Memory Cue", chord: { key: "m" }, action: "memoryCue", command: "3024" },
   { label: "Loop In", chord: { key: "i" }, action: "loopIn", command: "300a" },
@@ -395,11 +402,11 @@ const PLAYER_A: readonly Omit<Binding, "id" | "group" | "deck">[] = [
   { label: "Clear Hot Cue C", chord: { key: "3", metaKey: true }, action: "clearHotCueC", command: "3023" },
   { label: "Call Next Memory Cue", chord: { key: "n" }, action: "nextMemoryCue", command: "3039" },
   { label: "Call Previous Memory Cue", chord: { key: "b" }, action: "previousMemoryCue", command: "303a" },
-  { label: "Delete Memory Cue", chord: { key: "x" }, action: "deleteMemoryCue", command: "303b" },
+  { label: "Delete Memory Cue", chord: { key: "v" }, action: "deleteMemoryCue", command: "303b" },
   { label: "Jump Forward", chord: { key: "ArrowRight" }, action: "jumpForward", command: "3008" },
   { label: "Jump Reverse", chord: { key: "ArrowLeft" }, action: "jumpBack", command: "3009" },
-  { label: "Memory Cue 1", chord: { key: "a" }, action: "callMemoryCue1", command: "3025" },
-  { label: "Memory Cue 2", chord: { key: "s" }, action: "callMemoryCue2", command: "3026" },
+  { label: "Memory Cue 1", chord: { key: "e" }, action: "callMemoryCue1", command: "3025" },
+  { label: "Memory Cue 2", chord: { key: "u" }, action: "callMemoryCue2", command: "3026" },
   { label: "Memory Cue 3", chord: { key: "d" }, action: "callMemoryCue3", command: "3027" },
   { label: "Memory Cue 4", chord: { key: "f" }, action: "callMemoryCue4", command: "3028" },
   { label: "Memory Cue 5", chord: { key: "g" }, action: "callMemoryCue5", command: "3029" },
@@ -461,6 +468,14 @@ export const BINDINGS: readonly Binding[] = [
   ...PLAYER_A.filter((row) =>
     row.action !== "metronomeSound" && row.action !== "adjustGrid" && hotCuePad(row.action ?? "cue")?.clear !== true)
     .map(playerB),
+  // The EQ kills, high to low as the strip draws them. Player B's are a
+  // column to the right, not shift.
+  { id: "killHigh", group: "Player A", deck: "a", label: "High Kill", chord: { key: "q" }, action: "killHigh", pane: "Player A" },
+  { id: "killMid", group: "Player A", deck: "a", label: "Mid Kill", chord: { key: "a" }, action: "killMid", pane: "Player A" },
+  { id: "killLow", group: "Player A", deck: "a", label: "Low Kill", chord: { key: "y" }, action: "killLow", pane: "Player A" },
+  { id: "b.killHigh", group: "Player B", deck: "b", label: "High Kill", chord: { key: "w" }, action: "killHigh", pane: "Player B" },
+  { id: "b.killMid", group: "Player B", deck: "b", label: "Mid Kill", chord: { key: "s" }, action: "killMid", pane: "Player B" },
+  { id: "b.killLow", group: "Player B", deck: "b", label: "Low Kill", chord: { key: "x" }, action: "killLow", pane: "Player B" },
   { id: "volumeUp", group: "General", label: "Volume", chord: { key: "F12", metaKey: true }, action: "volumeUp", command: "3003" },
   { id: "volumeDown", group: "General", label: "Volume Down", chord: { key: "F11", metaKey: true }, action: "volumeDown", command: "3004" },
   { id: "mute", group: "General", label: "Mute", chord: { key: "F10", metaKey: true }, action: "mute", command: "3005" },
