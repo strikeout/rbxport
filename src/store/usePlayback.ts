@@ -72,6 +72,11 @@ export interface Playback {
    */
   scrubEnd: (snap?: (seconds: number) => number) => void;
   /**
+   * Whether a drag holds the head, or its landing is not yet in the ticks.
+   * The phase lock waits for this, so it does not fight the hand.
+   */
+  isScrubbing: () => boolean;
+  /**
    * How fast the deck is playing, as a multiple of the file's own speed.
    *
    * 1 is the track as recorded. What BPM that comes to is the caller's to work
@@ -864,6 +869,8 @@ export function usePlayback(trackId: string | null, DECK: VoiceId = DEFAULT_DECK
     [duration, seek],
   );
 
+  const isScrubbing = useCallback(() => scrubbing.current || landing.current !== null, []);
+
   const positionNow = useCallback(
     () => (anchor.current.playing ? extrapolate(anchor.current, performance.now()) : positionRef.current),
     [],
@@ -909,10 +916,10 @@ export function usePlayback(trackId: string | null, DECK: VoiceId = DEFAULT_DECK
 
   return useMemo(() => ({
     playing, position, duration, idle, error, toggle, playAfter, seek, seekFraction,
-    scrubBegin, scrubTo, scrubEnd, positionRef, positionNow, subscribe,
+    scrubBegin, scrubTo, scrubEnd, isScrubbing, positionRef, positionNow, subscribe,
     tempo, masterTempo, keyShift, shiftsKey, setKeyShift, setTempo, nudgeTempo, setMasterTempo,
     loop, setLoop, setLoopActive, clearLoop,
   }), [playing, position, duration, idle, error, toggle, playAfter, seek, seekFraction,
-    scrubBegin, scrubTo, scrubEnd, positionNow, subscribe, tempo, masterTempo, keyShift, shiftsKey,
+    scrubBegin, scrubTo, scrubEnd, isScrubbing, positionNow, subscribe, tempo, masterTempo, keyShift, shiftsKey,
     setKeyShift, setTempo, nudgeTempo, setMasterTempo, loop, setLoop, setLoopActive, clearLoop]);
 }

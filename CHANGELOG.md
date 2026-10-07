@@ -15,6 +15,11 @@ the version numbers [Semantic Versioning](https://semver.org/).
   Before, some presses of PLAY started the deck at once, off the beat.
 - A dragged waveform now lands in phase with the master. This applies to a
   playing deck with BEAT SYNC and Q on. The landing moves half a beat at most.
+- A deck with BEAT SYNC and Q on now stays on the master's beat. A beat jump,
+  a hot cue, a memory cue or a click on the waveform now lands on the beat.
+  When the master jumps, or a loop starts again, the deck goes back onto the
+  beat in less than half a second. A loop that you make on this deck starts
+  and ends on whole beats.
 - The playlist tree now uses the Browse font size, bold and line space. The
   track list uses the same settings from Preferences › View.
 - Connecting a USB only refreshes the device list. Automatic history and

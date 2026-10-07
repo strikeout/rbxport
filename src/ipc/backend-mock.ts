@@ -17,7 +17,7 @@ import type {
   EditHistoryState, FilterValues, GridState, LibraryProblem, LibrarySummary, Limiter, LinkPeerSeen, LinkStatus, RelatedCriterion, RowDto, SortKey,
   SmartRule, StickDefaults, SyncPlaylist, SyncProgress, Tick, TrackDetails, TrackField,
   PreferencesRequest, UpdateCheck, UpdateProgress, UpdateReady, ExportProgress,
-  TrackFilter, TreeNode, ViewHandle, ViewSpec, WaveformKind,
+  TrackFilter, TreeNode, ViewHandle, ViewSpec, VoiceId, WaveformKind,
 } from "./types";
 import { TREE_ROOT } from "./types";
 import { applyEditFrom, validateEdit, isDynamicFrom, tempoX100, type EditableBeat } from "@/lib/gridEdit";
@@ -1413,7 +1413,7 @@ export function createMockBackend(options: MockOptions = {}): Backend {
   const deckA = {
     frames: 0, totalFrames: 0, generation: 0, playing: false, loaded: false, loadId: 0,
     tempo: 1, masterTempo: false, keyShift: 0, startInFrames: 0,
-    loopInFrames: 0, loopOutFrames: 0, looping: false,
+    loopInFrames: 0, loopOutFrames: 0, looping: false, startsAt: 0,
   };
   // Deck B holds its own tempo and key lock even though a browser has no
   // audio to apply them to: a control that snapped back on the next tick would
@@ -1421,8 +1421,25 @@ export function createMockBackend(options: MockOptions = {}): Backend {
   const deckB = {
     frames: 0, totalFrames: 0, generation: 0, playing: false, loaded: false, loadId: 0,
     tempo: 1, masterTempo: false, keyShift: 0, startInFrames: 0,
-    loopInFrames: 0, loopOutFrames: 0, looping: false,
+    loopInFrames: 0, loopOutFrames: 0, looping: false, startsAt: 0,
   };
+  /** The preview voice, never loaded: see `tick`. */
+  const idlePreview = { ...deckB };
+  /**
+   * The deck that a command names. A command to the preview voice changes a
+   * copy that nothing counts or reads, so the preview stays still.
+   */
+  const deckOf = (deck: VoiceId) => (deck === "a" ? deckA : deck === "b" ? deckB : { ...idlePreview });
+  /** The beat of the track on each deck, in seconds, or 0 for none. */
+  const deckBeat = { a: 0, b: 0 };
+  // Where each deck is, for an end-to-end test that compares the two.
+  if (typeof window !== "undefined") {
+    (window as unknown as { __deckSeconds: () => { a: number; b: number; beat: number } }).__deckSeconds = () => ({
+      a: deckA.frames / SAMPLE_RATE,
+      b: deckB.frames / SAMPLE_RATE,
+      beat: deckBeat.b,
+    });
+  }
   const deckTickListeners = new Set<(tick: Tick) => void>();
   const deckEventListeners = new Set<(event: DeckEvent) => void>();
   let clock: ReturnType<typeof setTimeout> | null = null;
@@ -1447,7 +1464,7 @@ export function createMockBackend(options: MockOptions = {}): Backend {
     // ponytail: the mock never loads the preview voice, so a preview in a
     // browser stays silent and still. Give it its own counted deck if an
     // end-to-end test has to drive one.
-    p: { ...deckB },
+    p: { ...idlePreview },
     sampleRate: SAMPLE_RATE,
     // A browser has no audio callback, so there is nothing to meter. Zero is
     // the truth here rather than a placeholder: nothing is coming out.
@@ -1475,18 +1492,21 @@ export function createMockBackend(options: MockOptions = {}): Backend {
     const step = () => {
       clock = null;
       const now = performance.now();
-      deckA.frames = Math.min(
-        deckA.frames + Math.round(((now - clockAt) / 1000) * SAMPLE_RATE),
-        deckA.totalFrames,
-      );
-      // Inside a loop the head rounds at the out point, as the deck does.
-      if (deckA.looping && deckA.loopOutFrames > deckA.loopInFrames && deckA.frames >= deckA.loopOutFrames) {
-        deckA.frames = deckA.loopInFrames + ((deckA.frames - deckA.loopOutFrames) % (deckA.loopOutFrames - deckA.loopInFrames));
+      for (const deck of [deckA, deckB]) {
+        if (!deck.playing) continue;
+        // A held start (see `deckPlayAfter`) or a move counts from then, not from the last step.
+        const from = Math.max(clockAt, deck.startsAt);
+        if (now <= from) continue;
+        deck.frames = Math.min(deck.frames + Math.round(((now - from) / 1000) * SAMPLE_RATE), deck.totalFrames);
+        // Inside a loop the head rounds at the out point, as the deck does.
+        if (deck.looping && deck.loopOutFrames > deck.loopInFrames && deck.frames >= deck.loopOutFrames) {
+          deck.frames = deck.loopInFrames + ((deck.frames - deck.loopOutFrames) % (deck.loopOutFrames - deck.loopInFrames));
+        }
+        if (deck.frames >= deck.totalFrames) deck.playing = false;
       }
       clockAt = now;
-      if (deckA.frames >= deckA.totalFrames) deckA.playing = false;
       sendTick();
-      if (deckA.playing) clock = setTimeout(step, TICK_MS);
+      if (deckA.playing || deckB.playing) clock = setTimeout(step, TICK_MS);
     };
     clock = setTimeout(step, TICK_MS);
   };
@@ -1992,21 +2012,23 @@ export function createMockBackend(options: MockOptions = {}): Backend {
     // readouts — then behaves in a browser exactly as it does in the app, and
     // can be tested. What a browser cannot do is make a noise.
     deckLoad: (deck, trackId, loadId) => {
-      if (deck !== "a") return wait(undefined);
+      if (deck === "p") return wait(undefined);
+      const d = deckOf(deck);
       const index = Number.parseInt(trackId, 10) - 100000;
       const row = all[index];
-      deckA.frames = 0;
-      deckA.totalFrames = row ? row.durationSec * SAMPLE_RATE : 0;
-      deckA.playing = false;
-      deckA.loaded = row !== undefined;
-      deckA.loadId = row === undefined ? 0 : loadId;
-      deckA.generation += 1;
-      stopClock();
+      d.frames = 0;
+      d.totalFrames = row ? row.durationSec * SAMPLE_RATE : 0;
+      deckBeat[deck] = row && row.bpmX100 > 0 ? 6000 / row.bpmX100 : 0;
+      d.playing = false;
+      d.loaded = row !== undefined;
+      d.loadId = row === undefined ? 0 : loadId;
+      d.generation += 1;
+      if (!deckA.playing && !deckB.playing) stopClock();
       for (const listener of deckEventListeners) {
         listener({
-          deck: "a",
+          deck,
           loadId,
-          totalFrames: deckA.totalFrames,
+          totalFrames: d.totalFrames,
           sampleRate: SAMPLE_RATE,
           message: row ? null : "That track's file could not be found.",
         });
@@ -2014,82 +2036,99 @@ export function createMockBackend(options: MockOptions = {}): Backend {
       sendTick();
       return wait(undefined);
     },
-    deckUnload: () => {
-      deckA.loaded = false;
-      deckA.playing = false;
-      deckA.frames = 0;
-      deckA.loadId = 0;
-      stopClock();
+    deckUnload: (deck) => {
+      const d = deckOf(deck);
+      d.loaded = false;
+      d.playing = false;
+      d.frames = 0;
+      d.loadId = 0;
+      if (!deckA.playing && !deckB.playing) stopClock();
       sendTick();
       return wait(undefined);
     },
-    deckPlay: () => {
-      if (!deckA.loaded) return wait(undefined);
-      deckA.playing = true;
+    deckPlay: (deck) => {
+      const d = deckOf(deck);
+      if (!d.loaded) return wait(undefined);
+      d.playing = true;
+      d.startsAt = 0;
       startClock();
       return wait(undefined);
     },
     // The wait is a timer here rather than counted in output frames: a
     // browser has no callback to count them in, and the timing is only
     // ever judged by ear against a real device.
-    deckPlayAfter: (_deck, delayMs, positionMs) => {
-      if (!deckA.loaded) return wait(undefined);
+    deckPlayAfter: (deck, delayMs, positionMs) => {
+      const d = deckOf(deck);
+      if (!d.loaded) return wait(undefined);
       if (positionMs !== undefined) {
-        deckA.frames = Math.max(-5 * SAMPLE_RATE, Math.round((positionMs / 1000) * SAMPLE_RATE));
-        deckA.generation += 1;
+        d.frames = Math.max(-5 * SAMPLE_RATE, Math.round((positionMs / 1000) * SAMPLE_RATE));
+        d.generation += 1;
       }
-      deckA.playing = true;
-      setTimeout(startClock, Math.max(0, delayMs));
+      d.playing = true;
+      d.startsAt = performance.now() + Math.max(0, delayMs);
+      startClock();
       return wait(undefined);
     },
-    deckPause: () => {
-      deckA.playing = false;
-      stopClock();
+    deckPause: (deck) => {
+      const d = deckOf(deck);
+      d.playing = false;
+      if (!deckA.playing && !deckB.playing) stopClock();
       sendTick();
       return wait(undefined);
     },
-    deckSeek: (_deck, positionMs) => {
-      deckA.frames = Math.max(-5 * SAMPLE_RATE, Math.round((positionMs / 1000) * SAMPLE_RATE));
-      deckA.generation += 1;
+    deckSeek: (deck, positionMs) => {
+      const d = deckOf(deck);
+      d.frames = Math.max(-5 * SAMPLE_RATE, Math.round((positionMs / 1000) * SAMPLE_RATE));
+      d.generation += 1;
+      d.startsAt = Math.max(d.startsAt, performance.now());
       sendTick();
       return wait(undefined);
     },
-    deckSetLoop: (_deck, inMs, outMs) => {
+    deckSetLoop: (deck, inMs, outMs) => {
+      const d = deckOf(deck);
       const from = Math.max(0, Math.round((inMs / 1000) * SAMPLE_RATE));
       const to = Math.max(0, Math.round((outMs / 1000) * SAMPLE_RATE));
       if (to <= from) return wait(undefined);
-      deckA.loopInFrames = from;
-      deckA.loopOutFrames = to;
-      deckA.looping = true;
-      if (deckA.frames >= to || deckA.frames < from) {
-        deckA.frames = from;
-        deckA.generation += 1;
+      d.loopInFrames = from;
+      d.loopOutFrames = to;
+      d.looping = true;
+      if (d.frames >= to || d.frames < from) {
+        d.frames = from;
+        d.generation += 1;
+        d.startsAt = Math.max(d.startsAt, performance.now());
+      d.startsAt = Math.max(d.startsAt, performance.now());
       }
       sendTick();
       return wait(undefined);
     },
-    deckLoopActive: (_deck, on) => {
-      if (deckA.loopOutFrames <= deckA.loopInFrames) return wait(undefined);
-      deckA.looping = on;
+    deckLoopActive: (deck, on) => {
+      const d = deckOf(deck);
+      if (d.loopOutFrames <= d.loopInFrames) return wait(undefined);
+      d.looping = on;
       if (on) {
-        deckA.frames = deckA.loopInFrames;
-        deckA.generation += 1;
+        d.frames = d.loopInFrames;
+        d.generation += 1;
+        d.startsAt = Math.max(d.startsAt, performance.now());
+      d.startsAt = Math.max(d.startsAt, performance.now());
       }
       sendTick();
       return wait(undefined);
     },
-    deckClearLoop: () => {
-      deckA.loopInFrames = 0;
-      deckA.loopOutFrames = 0;
-      deckA.looping = false;
+    deckClearLoop: (deck) => {
+      const d = deckOf(deck);
+      d.loopInFrames = 0;
+      d.loopOutFrames = 0;
+      d.looping = false;
       sendTick();
       return wait(undefined);
     },
     // A browser has no audio, so a drag is a seek that follows the pointer:
     // the position moves, nothing is heard, and the visuals are the same.
     deckScrubBegin: () => wait(undefined),
-    deckScrubTo: (_deck, positionMs) => {
-      deckA.frames = Math.max(-5 * SAMPLE_RATE, Math.round((positionMs / 1000) * SAMPLE_RATE));
+    deckScrubTo: (deck, positionMs) => {
+      const d = deckOf(deck);
+      d.frames = Math.max(-5 * SAMPLE_RATE, Math.round((positionMs / 1000) * SAMPLE_RATE));
+      d.startsAt = Math.max(d.startsAt, performance.now());
       sendTick();
       return wait(undefined);
     },
@@ -2211,8 +2250,8 @@ export function createMockBackend(options: MockOptions = {}): Backend {
     setChannelMuted: () => wait(undefined),
     setCrossfade: () => wait(undefined),
     setEqCurve: () => wait(undefined),
-    deckScrubEnd: () => {
-      deckA.generation += 1;
+    deckScrubEnd: (deck) => {
+      deckOf(deck).generation += 1;
       sendTick();
       return wait(undefined);
     },
