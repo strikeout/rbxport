@@ -1424,8 +1424,10 @@ export const Player = memo(function Player({
     const head = playback.positionNow();
     const to = inPhase(head);
     if (Math.abs(to - head) <= PHASE_TOLERANCE) return;
-    playback.seek(to);
-    // The ticks run a command behind the seek: let the move arrive first.
+    // A move from the engine's own head, not a seek to `to`: a seek lands
+    // late by the time the command takes, and the lock then moves again.
+    playback.moveBy(to - head);
+    // The ticks run a command behind the move: let the move arrive first.
     lockHold.current = now + PHASE_SETTLE_MS;
   });
   useEffect(() => {
