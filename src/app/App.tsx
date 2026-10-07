@@ -28,6 +28,7 @@ import { LinkDeckStrip } from "@/views/statusbar/LinkDeckStrip";
 import styles from "./App.module.css";
 import { detectPlatform, dispatch, isTyping, menuAccelerator } from "@/lib/shortcuts";
 import { hasEditHistory, runEditHistory, setLibraryEditHistory } from "@/lib/editHistory";
+import { transposeKey } from "@/lib/camelot";
 import { gainToKnob, KNOB_FULL, knobToGain } from "@/lib/volume";
 import { clampWidth, TREE_BOUNDS } from "@/lib/splitter";
 import { exportSummary } from "@/lib/exportSummary";
@@ -261,6 +262,15 @@ function AppBody() {
     [],
   );
   const leaderBpmX100 = playingBpm[syncMaster];
+  /** Each deck's key shift in semitones, so the Traffic Light reads the key the deck sounds in. */
+  const [keyShift, setKeyShift] = useState<Record<DeckId, number>>({ a: 0, b: 0 });
+  const reportKeyShift = useMemo(
+    () => ({
+      a: (semitones: number) => setKeyShift((k) => (k.a === semitones ? k : { ...k, a: semitones })),
+      b: (semitones: number) => setKeyShift((k) => (k.b === semitones ? k : { ...k, b: semitones })),
+    }),
+    [],
+  );
   /**
    * How each deck reads the other for sync.
    *
@@ -478,7 +488,8 @@ function AppBody() {
   const [trafficLight, setTrafficLight] = useState<TrafficLightSource>(restored.trafficLight);
   const activeTrafficLight = trafficLight === "b" && deckCount(layout) < 2 ? "a" : trafficLight;
   const trafficDeck: DeckId = deckCount(layout) < 2 ? "a" : activeTrafficLight === "master" ? syncMaster : activeTrafficLight;
-  const trafficKey = (trafficDeck === "b" ? playerTrackB : playerTrack)?.key ?? null;
+  const trafficTrack = trafficDeck === "b" ? playerTrackB : playerTrack;
+  const trafficKey = trafficTrack ? transposeKey(trafficTrack.key, keyShift[trafficDeck]) : null;
   const master = useMasterControls();
   // Read at start so the remembered setting reaches the engine before the
   // first thing plays, not when Settings is next opened.
@@ -2284,6 +2295,7 @@ function AppBody() {
             onSyncToggle={deckCount(layout) > 1 ? toggleSync.a : undefined}
             leaderBpmX100={syncMaster === "a" ? null : leaderBpmX100}
             onPlayingBpm={reportPlayingBpm.a}
+            onKeyShift={reportKeyShift.a}
             publishGridFollow={publishGridFollow.a}
             onGridNudge={gridNudged.a}
             readOnly={readOnly}
@@ -2317,6 +2329,7 @@ function AppBody() {
               onSyncToggle={toggleSync.b}
               leaderBpmX100={syncMaster === "b" ? null : leaderBpmX100}
               onPlayingBpm={reportPlayingBpm.b}
+              onKeyShift={reportKeyShift.b}
               publishGridFollow={publishGridFollow.b}
               onGridNudge={gridNudged.b}
               readOnly={readOnly}

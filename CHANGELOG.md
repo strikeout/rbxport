@@ -8,6 +8,10 @@ the version numbers [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Fixed
+- The Traffic Light now lights keys in a library that stores them as Camelot
+  codes, such as `7A`. Before, no key cell lit in such a library.
+- The Traffic Light now follows the key shift of the deck. When you shift the
+  key, the browser lights the keys that go with the new key.
 - A grid shift now sounds at once. The metronome clicks on the shifted grid
   when you push the button, before the save ends. When you hold the button,
   the clicks do not fall behind it.
