@@ -744,6 +744,16 @@ impl Engine {
         handle.clock().set_loop(None);
     }
 
+    /// Moves the playhead by `ms` from where it is now. The move is worked
+    /// out here, from the clock, so it does not land late by the time the
+    /// command took to arrive. A grid shift on a synced deck uses it.
+    pub fn move_ms(&self, deck: Deck, ms: f64) {
+        let Some(handle) = self.deck(deck) else { return };
+        #[allow(clippy::cast_precision_loss, clippy::cast_possible_truncation, clippy::cast_sign_loss, reason = "a track is far under 2^52 frames, and the sum is clamped at zero")]
+        let to = (handle.clock().position() as f64 + ms * f64::from(self.sample_rate) / 1000.0).max(0.0) as u64;
+        self.seek_frames(deck, to);
+    }
+
     pub fn seek_ms(&self, deck: Deck, ms: f64) {
         let frames = (ms.max(0.0) * f64::from(self.sample_rate) / 1000.0) as u64;
         let pre_roll = ((-ms).clamp(0.0, 5000.0) * f64::from(self.sample_rate) / 1000.0) as u64;

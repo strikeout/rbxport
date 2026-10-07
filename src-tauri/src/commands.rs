@@ -1874,6 +1874,21 @@ pub async fn deck_metronome<R: tauri::Runtime>(
     Ok(())
 }
 
+/// Gives a deck's metronome a grid at once, without a save. The GRID panel
+/// sends a nudged grid here before the file is written, so the click moves
+/// on the press.
+#[tauri::command]
+pub async fn deck_metronome_grid(
+    player: State<'_, Arc<crate::player::Player>>,
+    deck: String,
+    beats: Vec<(u32, bool)>,
+) -> AppResult<()> {
+    if let Some(engine) = player.opened() {
+        engine.set_metronome_grid(crate::player::deck_of(&deck), &beats);
+    }
+    Ok(())
+}
+
 /// Preferences › Audio › Metronome: which click, and how loud.
 #[tauri::command]
 pub async fn set_metronome(
@@ -1994,6 +2009,19 @@ pub async fn deck_seek<R: tauri::Runtime>(
         // So the interface sees where it landed even while paused, when no
         // tick is running.
         crate::player::start_ticker(&app);
+    }
+    Ok(())
+}
+
+/// Moves a deck's playhead by `by_ms` from where the engine has it.
+#[tauri::command]
+pub async fn deck_move(
+    player: State<'_, Arc<crate::player::Player>>,
+    deck: String,
+    by_ms: f64,
+) -> AppResult<()> {
+    if let Some(engine) = player.opened() {
+        engine.move_ms(crate::player::deck_of(&deck), by_ms);
     }
     Ok(())
 }

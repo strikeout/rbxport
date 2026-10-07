@@ -8,6 +8,11 @@ the version numbers [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Fixed
+- A grid shift now sounds at once. The metronome clicks on the shifted grid
+  when you push the button, before the save ends. When you hold the button,
+  the clicks do not fall behind it.
+- A deck with BEAT SYNC on now moves with a grid shift on either deck. It
+  keeps its place against the master's beat.
 - A change to the beat loop length now applies to a loop that plays. Before,
   you had to exit the loop and start it again. A head after the new end goes
   back by whole loops, so it stays in time.

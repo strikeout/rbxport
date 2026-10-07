@@ -311,6 +311,7 @@ async function realBackend(): Promise<Backend> {
       invoke<void>("deck_play_after", { deck, delayMs, positionMs: positionMs ?? null }),
     deckPause: (deck) => invoke<void>("deck_pause", { deck }),
     deckSeek: (deck, positionMs) => invoke<void>("deck_seek", { deck, positionMs }),
+    deckMove: (deck, byMs) => invoke<void>("deck_move", { deck, byMs }),
     deckSetLoop: (deck, inMs, outMs) => invoke<void>("deck_set_loop", { deck, inMs, outMs }),
     deckLoopActive: (deck, on) => invoke<void>("deck_loop_active", { deck, on }),
     deckClearLoop: (deck) => invoke<void>("deck_clear_loop", { deck }),
@@ -330,6 +331,7 @@ async function realBackend(): Promise<Backend> {
     deckTempo: (deck, tempo) => invoke<void>("deck_tempo", { deck, tempo }),
     deckMasterTempo: (deck, on) => invoke<void>("deck_master_tempo", { deck, on }),
     deckMetronome: (deck, on) => invoke<void>("deck_metronome", { deck, on }),
+    setMetronomeGrid: (deck, beats) => invoke<void>("deck_metronome_grid", { deck, beats }),
     deckKeyShift: (deck, semitones) => invoke<void>("deck_key_shift", { deck, semitones }),
     setMetronome: (sound, volume) => invoke<void>("set_metronome", { sound, volume }),
     setAudioConfig: (sampleRate, bufferFrames) =>

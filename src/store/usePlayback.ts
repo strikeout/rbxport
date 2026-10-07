@@ -46,6 +46,12 @@ export interface Playback {
    */
   playAfter: (delayMs: number, fromSeconds?: number) => void;
   seek: (seconds: number) => void;
+  /**
+   * Moves the head by `seconds` from where the engine has it. A seek worked
+   * out from the drawn head lands late by the time the command takes; this
+   * does not, so many small moves do not add up to an error.
+   */
+  moveBy: (seconds: number) => void;
   /** Seek by fraction, for clicking the waveform. */
   seekFraction: (fraction: number) => void;
   /** The deck's loop, as the engine reports it; null for none. */
@@ -673,6 +679,24 @@ export function usePlayback(trackId: string | null, DECK: VoiceId = DEFAULT_DECK
     [idle, emit, isLoaded, DECK, setPosition],
   );
 
+  const moveBy = useCallback(
+    (seconds: number) => {
+      if (idle || !Number.isFinite(seconds) || !isLoaded()) return;
+      anchor.current = {
+        ...anchor.current,
+        frames: anchor.current.frames + seconds * anchor.current.sampleRate,
+      };
+      void (async () => {
+        try {
+          await (await getBackend()).deckMove(DECK, seconds * 1000);
+        } catch (failure) {
+          setError(reasonFrom(failure));
+        }
+      })();
+    },
+    [idle, isLoaded, DECK],
+  );
+
   /**
    * Audio follows the pointer while a waveform is dragged.
    *
@@ -915,11 +939,11 @@ export function usePlayback(trackId: string | null, DECK: VoiceId = DEFAULT_DECK
   }, [loopCall, DECK]);
 
   return useMemo(() => ({
-    playing, position, duration, idle, error, toggle, playAfter, seek, seekFraction,
+    playing, position, duration, idle, error, toggle, playAfter, seek, moveBy, seekFraction,
     scrubBegin, scrubTo, scrubEnd, isScrubbing, positionRef, positionNow, subscribe,
     tempo, masterTempo, keyShift, shiftsKey, setKeyShift, setTempo, nudgeTempo, setMasterTempo,
     loop, setLoop, setLoopActive, clearLoop,
-  }), [playing, position, duration, idle, error, toggle, playAfter, seek, seekFraction,
+  }), [playing, position, duration, idle, error, toggle, playAfter, seek, moveBy, seekFraction,
     scrubBegin, scrubTo, scrubEnd, isScrubbing, positionNow, subscribe, tempo, masterTempo, keyShift, shiftsKey,
     setKeyShift, setTempo, nudgeTempo, setMasterTempo, loop, setLoop, setLoopActive, clearLoop]);
 }

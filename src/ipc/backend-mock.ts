@@ -2084,6 +2084,13 @@ export function createMockBackend(options: MockOptions = {}): Backend {
       sendTick();
       return wait(undefined);
     },
+    deckMove: (deck, byMs) => {
+      const d = deckOf(deck);
+      d.frames = Math.max(0, d.frames + Math.round((byMs / 1000) * SAMPLE_RATE));
+      d.generation += 1;
+      sendTick();
+      return wait(undefined);
+    },
     deckSetLoop: (deck, inMs, outMs) => {
       const d = deckOf(deck);
       const from = Math.max(0, Math.round((inMs / 1000) * SAMPLE_RATE));
@@ -2237,6 +2244,7 @@ export function createMockBackend(options: MockOptions = {}): Backend {
       return wait(undefined);
     },
     deckMetronome: () => wait(undefined),
+    setMetronomeGrid: () => wait(undefined),
     deckKeyShift: (deck, semitones) => {
       (deck === "b" ? deckB : deckA).keyShift = Math.max(-12, Math.min(12, Math.round(semitones)));
       sendTick();
