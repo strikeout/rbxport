@@ -4,8 +4,9 @@
  * rekordbox's own arrangement, from `german.lang` and the Export key map:
  * `Set Memory Cue` (`M`) stores the cue point the transport's CUE has set,
  * `Call Previous Memory Cue` (`B`) and `Call Next Memory Cue` (`N`) move the
- * playhead to the memory cue either side of it, and `Delete Memory Cue` (`X`)
- * removes the one the playhead is standing on. The list beside the deck has
+ * playhead to the memory cue either side of it, and `Delete Memory Cue`
+ * removes the one the playhead is standing on. The preset puts it on `X`;
+ * here it is on `V`, because `X` is Player B's LOW kill. The list beside the deck has
  * a ✕ per row for the rest.
  *
  * Every write goes through `useCueWriter`, which the hot cue pads share:

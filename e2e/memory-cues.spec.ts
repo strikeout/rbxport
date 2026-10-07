@@ -88,13 +88,13 @@ test("MEMORY stores the cue point, and the list and both waveforms show it", asy
   await expect(overview.locator('[data-cue=""]')).toHaveCount(1);
 });
 
-test("the M and X keys are MEMORY and its ✕, and a row's ✕ deletes that row", async ({ page }) => {
+test("the M and V keys are MEMORY and its ✕, and a row's ✕ deletes that row", async ({ page }) => {
   await load(page, "?writable=1");
   await cueSomewhereIn(page);
 
   await page.keyboard.press("m");
   await expect(memoryRows(page)).toHaveCount(2);
-  await page.keyboard.press("x");
+  await page.keyboard.press("v");
   await expect(memoryRows(page)).toHaveCount(1);
 
   // The first row's ✕ takes the mock's own memory cue, leaving nothing.
