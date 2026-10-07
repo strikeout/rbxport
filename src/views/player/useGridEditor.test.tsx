@@ -138,7 +138,7 @@ describe("recovered grid control behavior", () => {
     expect(onNudge.mock.calls.map(call => call[0] as number)).toEqual([SHIFT_MS, HELD_SHIFT_MS, HELD_SHIFT_MS, -SHIFT_MS]);
     await settle();
     expect(edits.gridEdit).toHaveBeenCalledTimes(1);
-    await act(async () => finish(gridState())); await settle();
+    act(() => finish(gridState())); await settle();
     expect(edits.gridEdit.mock.calls.map(call => call[1] as GridEdit)).toEqual([
       { kind: "nudge", ms: SHIFT_MS }, { kind: "nudge", ms: 2 * HELD_SHIFT_MS - SHIFT_MS },
     ]);
