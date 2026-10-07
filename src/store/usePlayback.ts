@@ -66,7 +66,11 @@ export interface Playback {
    */
   scrubBegin: () => void;
   scrubTo: (seconds: number) => void;
-  scrubEnd: () => void;
+  /**
+   * Ends a drag. `snap` can move the landing place: a synced deck lands in
+   * phase with the master. It gets where the drag let go, in seconds.
+   */
+  scrubEnd: (snap?: (seconds: number) => number) => void;
   /**
    * How fast the deck is playing, as a multiple of the file's own speed.
    *
@@ -806,7 +810,7 @@ export function usePlayback(trackId: string | null, DECK: VoiceId = DEFAULT_DECK
     [idle, isLoaded, DECK],
   );
 
-  const scrubEnd = useCallback(() => {
+  const scrubEnd = useCallback((snap?: (seconds: number) => number) => {
     if (!scrubbing.current) return;
     scrubbing.current = false;
     // Still pinned: the seek is a command behind the ticks, so the next one or
@@ -821,8 +825,18 @@ export function usePlayback(trackId: string | null, DECK: VoiceId = DEFAULT_DECK
       cancelAnimationFrame(flushing.current);
       flushing.current = 0;
     }
-    const target = pending.current;
+    let target = pending.current;
     pending.current = null;
+    if (snap) {
+      const at = target ?? positionRef.current;
+      const snapped = snap(at);
+      if (Number.isFinite(snapped) && Math.abs(snapped - at) > 0.001) {
+        target = Math.max(snapped, -5);
+        anchor.current = pinned(anchor.current, target, performance.now());
+        setPosition(target);
+        emit(target);
+      }
+    }
     void (async () => {
       try {
         const backend = await getBackend();
@@ -832,7 +846,7 @@ export function usePlayback(trackId: string | null, DECK: VoiceId = DEFAULT_DECK
         setError(reasonFrom(failure));
       }
     })();
-  }, [DECK]);
+  }, [DECK, emit, setPosition]);
 
   // A drag that is still pending when the player goes away must not fire.
   useEffect(

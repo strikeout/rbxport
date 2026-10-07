@@ -10,6 +10,8 @@ the version numbers [Semantic Versioning](https://semver.org/).
 ### Fixed
 - A deck with BEAT SYNC and Q on now starts on the master's beat every time.
   Before, some presses of PLAY started the deck at once, off the beat.
+- A dragged waveform now lands in phase with the master. This applies to a
+  playing deck with BEAT SYNC and Q on. The landing moves half a beat at most.
 - The playlist tree now uses the Browse font size, bold and line space. The
   track list uses the same settings from Preferences › View.
 - Connecting a USB only refreshes the device list. Automatic history and
