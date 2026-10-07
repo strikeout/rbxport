@@ -420,7 +420,7 @@
   "Selected: 1 Track": "選択済み: 1 トラック",
   "rbxport": "rbxport",
   "Dual control": "デュアルコントロール",
-  "Link the waveform controls and beat jump across both decks.": "波形コントロールをリンクし、両方のデッキ間でビートジャンプを行います。",
+  "Link the beat jump across both decks.": "両デッキのビートジャンプをリンクします。",
   "b": "b",
   "--tree-w": "--木-w",
   "Resize the library tree": "ライブラリツリーのサイズを変更する",
@@ -1390,5 +1390,11 @@
   "A track being removed is still referenced by USB history. Import and clear that history in rekordbox first.": "削除されたトラックは、USB 履歴によって引き続き参照されます。まずその履歴を rekordbox にインポートしてクリアします。",
   "Pioneer DJ recommends FAT32": "Pioneer DJ recommends FAT32",
   "Unlock anyway": "Unlock anyway",
-  "It looks like you haven’t made a backup yet. We strongly recommend creating one before using RBXport.": "It looks like you haven’t made a backup yet. We strongly recommend creating one before using RBXport."
+  "It looks like you haven’t made a backup yet. We strongly recommend creating one before using RBXport.": "It looks like you haven’t made a backup yet. We strongly recommend creating one before using RBXport.",
+  "Click to preview from here": "クリックするとここからプレビュー再生します",
+  "Mute the players": "プレーヤーをミュート",
+  "Stop the players": "プレーヤーを停止",
+  "While a preview plays": "プレビュー再生中",
+  "Stop preview": "プレビューを停止",
+  "Stop preview (Esc)": "プレビューを停止 (Esc)"
 }

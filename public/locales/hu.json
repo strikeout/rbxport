@@ -371,7 +371,7 @@
   "Selected: 1 Track": "Kiválasztva: 1 szám",
   "rbxport": "rbxport",
   "Dual control": "Kettős vezérlés",
-  "Link the waveform controls and beat jump across both decks.": "Kapcsolja össze a hullámforma-vezérlőket, és ugorjon át mindkét fedélzeten.",
+  "Link the beat jump across both decks.": "A beat jump összekapcsolása mindkét decken.",
   "b": "b",
   "--tree-w": "--fa-w",
   "Resize the library tree": "Méretezze át a könyvtárfát",
@@ -1383,5 +1383,11 @@
   "A track being removed is still referenced by USB history. Import and clear that history in rekordbox first.": "Az USB-előzmények továbbra is hivatkoznak az eltávolítandó műsorszámra. Először importálja és törölje az előzményeket a rekordboxból.",
   "Pioneer DJ recommends FAT32": "Pioneer DJ recommends FAT32",
   "Unlock anyway": "Unlock anyway",
-  "It looks like you haven’t made a backup yet. We strongly recommend creating one before using RBXport.": "It looks like you haven’t made a backup yet. We strongly recommend creating one before using RBXport."
+  "It looks like you haven’t made a backup yet. We strongly recommend creating one before using RBXport.": "It looks like you haven’t made a backup yet. We strongly recommend creating one before using RBXport.",
+  "Click to preview from here": "Kattintson az előhallgatáshoz innen",
+  "Mute the players": "Lejátszók némítása",
+  "Stop the players": "Lejátszók leállítása",
+  "While a preview plays": "Előhallgatás közben",
+  "Stop preview": "Előhallgatás leállítása",
+  "Stop preview (Esc)": "Előhallgatás leállítása (Esc)"
 }

@@ -149,9 +149,10 @@ test("the control row stands in for the pad row: no tabs, no pads, the capture's
     // The tempo step and MT/RST buttons that used to sit here moved into the
     // deck tempo slider (0bd2668, 2026-09-20), behind the BPM readout.
     await expect(row.getByRole("button")).toHaveText([
-      "", "", "", "MEMORY", "AU", "MA", "‹", "›", "", "", "Q",
+      "", "", "", "MEMORY", "AU", "MA", "‹", "4", "›", "", "", "Q",
     ]);
-    await expect(row.getByRole("button", { name: "Loop in" })).toBeDisabled();
+    // A loaded, analysed track can loop; with no loop yet, OUT has nothing to do.
+    await expect(row.getByRole("button", { name: "Loop in" })).toBeEnabled();
     await expect(row.getByRole("button", { name: "Loop out" })).toBeDisabled();
     // Both mock rows this loads are analysed, with a grid to edit.
     await expect(row.getByRole("button", { name: "Shift the grid earlier" })).toBeEnabled();
@@ -164,6 +165,36 @@ test("the control row stands in for the pad row: no tabs, no pads, the capture's
     xs.push((await box(button)).x);
   }
   expect([...xs].sort((p, q) => p - q)).toEqual(xs);
+});
+
+test("the control row loops the chosen number of beats, and the steps resize it", async ({ page }) => {
+  const { a } = await twoPlayer(page, "?writable=1");
+  const row = a.getByTestId("player-controls");
+  await row.getByRole("button", { name: "Shorter loop" }).click();
+  await expect(row.getByRole("button", { name: "2 beat loop" })).toBeVisible();
+
+  // AU: IN starts a two-beat loop from the head; the field and both ends light.
+  await row.getByRole("button", { name: "Loop in" }).click();
+  const exit = row.getByRole("button", { name: "Exit loop" });
+  await expect(exit).toHaveAttribute("aria-pressed", "true");
+  await expect(row.getByRole("button", { name: "Loop out" })).toBeEnabled();
+
+  // A step changes the length of the playing loop, and the loop plays on.
+  await row.getByRole("button", { name: "Longer loop" }).click();
+  await expect(exit).toHaveText("4");
+
+  // OUT with no IN waiting exits; the range stays for a RELOOP.
+  await row.getByRole("button", { name: "Loop out" }).click();
+  await expect(row.getByRole("button", { name: "4 beat loop" })).toHaveAttribute("aria-pressed", "false");
+  await expect(row.getByRole("button", { name: "Loop out" })).toBeEnabled();
+
+  // MA: IN and OUT by hand.
+  const manual = row.getByRole("button", { name: "MA", exact: true });
+  await manual.click();
+  await expect(manual).toHaveAttribute("aria-pressed", "true");
+  // IN waits for its OUT, lit.
+  await row.getByRole("button", { name: "Loop in" }).click();
+  await expect(row.getByRole("button", { name: "Loop in" })).toHaveAttribute("data-on", "true");
 });
 
 test("deck B reads the other way up, and its detail meets deck A's at the centre line", async ({ page }) => {
@@ -348,4 +379,70 @@ test("an empty sleeve shows the record in every layout, and the row's too", asyn
   await page.locator('[role="gridcell"][data-col="title"]').first().dblclick();
   const loaded = page.getByRole("button", { name: "Eject" }).first();
   expect(await loaded.locator("svg").first().locator("path").getAttribute("d")).toBe(RECORD);
+});
+
+/**
+ * BEAT SYNC and Q on: deck B stays on the master's beat. Both decks hold the
+ * same track, so "on the beat" is a distance between the two heads of whole
+ * beats. The mock counts frames, so this reads them, not the screen.
+ */
+test("a synced deck with Q on stays on the master's beat after jumps and in a loop", async ({ page }) => {
+  await page.goto("/");
+  await expect(page.getByTestId("browser-title")).toContainText("Tracks)");
+  await page.getByRole("button", { name: "Layout" }).click();
+  await page.getByRole("menuitemradio", { name: "2 PLAYER" }).click();
+  const first = page.locator('[role="gridcell"][data-col="title"]').first();
+  await first.dblclick();
+  await first.click({ button: "right" });
+  const menu = page.getByRole("menu", { name: "Track" });
+  await menu.getByRole("menuitem", { name: "Load", exact: true }).hover();
+  await menu.getByRole("menuitem", { name: "Load track to player 2" }).click();
+  const b = page.getByRole("region", { name: "Preview player B" });
+  await expect(b.getByTestId("player-title")).not.toHaveText("");
+
+  /** How far B is from A's beat, in seconds: 0 is on it. */
+  const offBeat = () =>
+    page.evaluate(() => {
+      const { a, b, beat } = (window as unknown as {
+        __deckSeconds: () => { a: number; b: number; beat: number };
+      }).__deckSeconds();
+      const into = (((a - b) % beat) + beat) % beat;
+      return Math.min(into, beat - into);
+    });
+
+  // A is the master by default and Q is on: B follows.
+  await b.getByRole("button", { name: "Beat sync" }).click();
+  await expect(b.getByRole("button", { name: "Beat sync" })).toHaveAttribute("aria-pressed", "true");
+  const play = page.getByRole("button", { name: "Play", exact: true });
+  await play.first().click();
+  await page.waitForTimeout(700);
+  await play.first().click();
+  await expect.poll(offBeat, { timeout: 3000 }).toBeLessThan(0.012);
+
+  // FINE jumps on the master take it off B's beat; the lock brings B back.
+  const sizes = page.getByRole("button", { name: "Beat jump size" });
+  await sizes.first().click();
+  await page.getByRole("menu", { name: "Beat jump size" }).getByRole("menuitemradio", { name: "Fine" }).click();
+  const forward = page.getByRole("button", { name: "Beat jump forward" });
+  for (let n = 0; n < 8; n++) await forward.first().click();
+  await expect.poll(offBeat, { timeout: 3000 }).toBeLessThan(0.012);
+
+  // A FINE jump on B lands back on the beat.
+  await sizes.last().click();
+  await page.getByRole("menu", { name: "Beat jump size" }).getByRole("menuitemradio", { name: "Fine" }).click();
+  for (let n = 0; n < 8; n++) await forward.last().click();
+  await expect.poll(offBeat, { timeout: 3000 }).toBeLessThan(0.012);
+
+  // A hand-made loop on B: IN and OUT go on whole beats, so B is on the beat
+  // through each repeat of the loop.
+  const row = b.getByTestId("player-controls");
+  await row.getByRole("button", { name: "MA", exact: true }).click();
+  await row.getByRole("button", { name: "Loop in" }).click();
+  await page.waitForTimeout(900);
+  await row.getByRole("button", { name: "Loop out" }).click();
+  await expect(row.getByRole("button", { name: "Exit loop" })).toHaveAttribute("aria-pressed", "true");
+  for (let n = 0; n < 5; n++) {
+    await page.waitForTimeout(400);
+    await expect.poll(offBeat, { timeout: 1000 }).toBeLessThan(0.012);
+  }
 });

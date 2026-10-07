@@ -61,6 +61,7 @@ import { MixerStrip } from "@/views/player/MixerStrip";
 import { DualZoom } from "@/views/player/DualDeck";
 import type { PreferencesTarget } from "@/views/settings/Preferences";
 import { PreferencesProvider, usePreferencesStore } from "@/store/usePreferences";
+import { PreviewProvider } from "@/store/usePreview";
 import type { PreferencePane } from "@/lib/preferences";
 import { answer, deckNumber, setPlaying, whenLoaded, withSetting, type ScriptHandler } from "@/lib/scripting";
 import { useAnalysis } from "@/store/useAnalysis";
@@ -280,10 +281,33 @@ function AppBody() {
     [],
   );
   /**
+   * A grid shift on one deck, handed to the other: a deck synced to the
+   * shifted one moves with it. Each deck decides by its own BEAT SYNC
+   * whether it moves.
+   */
+  const followA = useRef<(ms: number) => void>(() => {});
+  const followB = useRef<(ms: number) => void>(() => {});
+  const publishGridFollow = useMemo(
+    () => ({
+      a: (follow: (ms: number) => void) => {
+        followA.current = follow;
+      },
+      b: (follow: (ms: number) => void) => {
+        followB.current = follow;
+      },
+    }),
+    [],
+  );
+  const gridNudged = useMemo(
+    () => ({ a: (ms: number) => followB.current(ms), b: (ms: number) => followA.current(ms) }),
+    [],
+  );
+  /**
    * The zoom cluster the two-deck layout shares, registered the same way:
    * one + RST − over the line where the two details meet, and a press
-   * zooms both decks. DUAL CONTROL off, each deck still keeps its own zoom
-   * for the wheel; the cluster is simply pressed on both.
+   * zooms both decks. The two decks share one zoom whatever DUAL CONTROL
+   * says, so the wheel on either detail zooms both: equal bars give equal
+   * beat spacing, and two synced grids can be compared by eye.
    */
   const zoomA = useRef<(by: number) => void>(() => {});
   const zoomB = useRef<(by: number) => void>(() => {});
@@ -306,9 +330,6 @@ function AppBody() {
   const [waveformZoom, setWaveformZoom] = useState(restored.waveformZoom);
   const setZoomA = useCallback((bars: number) => {
     setWaveformZoom((zoom) => zoom.a === bars ? zoom : { ...zoom, a: bars });
-  }, []);
-  const setZoomB = useCallback((bars: number) => {
-    setWaveformZoom((zoom) => zoom.b === bars ? zoom : { ...zoom, b: bars });
   }, []);
   const [dualBars, setDualBars] = useState(restored.waveformZoom.a);
   const setLinkedZoom = useCallback((bars: number) => {
@@ -2176,6 +2197,7 @@ function AppBody() {
   ]);
   return (
     <PreferencesProvider value={prefs}>
+    <PreviewProvider>
     <MasterOutputConnection mode={viewPrefs.vuMeter} />
     <div className={styles.window} data-platform={platform.linux ? "linux" : platform.mac ? "mac" : "windows"}>
       <div
@@ -2216,7 +2238,7 @@ function AppBody() {
                 className={styles.dual}
                 aria-label="Dual control"
                 aria-pressed={dual}
-                title={tip("Link the waveform controls and beat jump across both decks.")}
+                title={tip("Link the beat jump across both decks.")}
                 data-on={dual || undefined}
                 onClick={() => setDual((was) => !was)}
               >
@@ -2245,8 +2267,8 @@ function AppBody() {
             transportSlot={deckCount(layout) > 1 ? transportA : null}
             dual={deckCount(layout) > 1}
             publishZoom={deckCount(layout) > 1 ? publishZoom.a : undefined}
-            bars={deckCount(layout) > 1 && dual ? dualBars : waveformZoom.a}
-            onBars={deckCount(layout) > 1 && dual ? setLinkedZoom : setZoomA}
+            bars={deckCount(layout) > 1 ? dualBars : waveformZoom.a}
+            onBars={deckCount(layout) > 1 ? setLinkedZoom : setZoomA}
             {...(deckCount(layout) > 1 ? linked : {})}
             publishSync={publishSync.a}
             {...(deckCount(layout) > 1 ? { peerSync: peerSync.a } : {})}
@@ -2256,6 +2278,8 @@ function AppBody() {
             onSyncToggle={deckCount(layout) > 1 ? toggleSync.a : undefined}
             leaderBpmX100={syncMaster === "a" ? null : leaderBpmX100}
             onPlayingBpm={reportPlayingBpm.a}
+            publishGridFollow={publishGridFollow.a}
+            onGridNudge={gridNudged.a}
             readOnly={readOnly}
           />
           {deckCount(layout) > 1 ? (
@@ -2276,8 +2300,8 @@ function AppBody() {
               flipped
               dual
               publishZoom={publishZoom.b}
-              bars={dual ? dualBars : waveformZoom.b}
-              onBars={dual ? setLinkedZoom : setZoomB}
+              bars={dualBars}
+              onBars={setLinkedZoom}
               {...linked}
               publishSync={publishSync.b}
               peerSync={peerSync.b}
@@ -2287,6 +2311,8 @@ function AppBody() {
               onSyncToggle={toggleSync.b}
               leaderBpmX100={syncMaster === "b" ? null : leaderBpmX100}
               onPlayingBpm={reportPlayingBpm.b}
+              publishGridFollow={publishGridFollow.b}
+              onGridNudge={gridNudged.b}
               readOnly={readOnly}
             />
           ) : null}
@@ -2588,6 +2614,7 @@ function AppBody() {
         }}
       />
     </div>
+    </PreviewProvider>
     </PreferencesProvider>
   );
 }

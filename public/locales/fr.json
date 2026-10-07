@@ -382,7 +382,7 @@
   "Selected: 1 Track": "Sélectionné : 1 piste",
   "rbxport": "rbxport",
   "Dual control": "Double contrôle",
-  "Link the waveform controls and beat jump across both decks.": "Liez les commandes de forme d'onde et battez le saut sur les deux platines.",
+  "Link the beat jump across both decks.": "Lier le saut de temps sur les deux platines.",
   "b": "b",
   "--tree-w": "--arbre-w",
   "Resize the library tree": "Redimensionner l'arborescence de la bibliothèque",
@@ -1383,5 +1383,11 @@
   "OneLibrary contains cue records that this export would replace. Import the cues in rekordbox first.": "OneLibrary contient des enregistrements de repères que cette exportation remplacerait. Importez d’abord les cues dans rekordbox.",
   "A track being removed is still referenced by USB history. Import and clear that history in rekordbox first.": "Une piste en cours de suppression est toujours référencée par l'historique USB. Importez et effacez d’abord cet historique dans rekordbox.",
   "Unlock anyway": "Unlock anyway",
-  "It looks like you haven’t made a backup yet. We strongly recommend creating one before using RBXport.": "It looks like you haven’t made a backup yet. We strongly recommend creating one before using RBXport."
+  "It looks like you haven’t made a backup yet. We strongly recommend creating one before using RBXport.": "It looks like you haven’t made a backup yet. We strongly recommend creating one before using RBXport.",
+  "Click to preview from here": "Cliquez pour pré-écouter à partir d'ici",
+  "Mute the players": "Couper le son des lecteurs",
+  "Stop the players": "Arrêter les lecteurs",
+  "While a preview plays": "Pendant une pré-écoute",
+  "Stop preview": "Arrêter la pré-écoute",
+  "Stop preview (Esc)": "Arrêter la pré-écoute (Échap)"
 }

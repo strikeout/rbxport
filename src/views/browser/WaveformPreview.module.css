@@ -1,0 +1,43 @@
+/* The click target: the canvas, and the playhead over it while it plays. */
+.preview {
+  position: relative;
+  display: inline-block;
+  vertical-align: middle;
+  cursor: pointer;
+}
+
+.preview canvas { display: block; }
+
+/* The preview's playhead. Moved by a transform, one frame at a time. */
+.head {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 1px;
+  background: var(--c-text);
+  pointer-events: none;
+  will-change: transform;
+}
+
+/* Stops the preview: a small square over the left end of the waveform. */
+.stop {
+  position: absolute;
+  top: 50%;
+  left: 0;
+  translate: 0 -50%;
+  width: 13px;
+  height: 13px;
+  padding: 0;
+  border: 0;
+  border-radius: 2px;
+  background: var(--c-deck-button);
+  cursor: pointer;
+}
+.stop::before {
+  content: "";
+  position: absolute;
+  inset: 4px;
+  background: var(--c-text);
+}
+.stop:hover { background: var(--c-pad-active); }

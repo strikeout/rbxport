@@ -368,7 +368,7 @@
   "Selected: 1 Track": "已選擇： 1 首曲目",
   "rbxport": "RBX連接埠",
   "Dual control": "雙控",
-  "Link the waveform controls and beat jump across both decks.": "連結兩個面板上的波形控制和節拍跳躍。",
+  "Link the beat jump across both decks.": "連結兩個播放器的節拍跳躍。",
   "b": "乙",
   "--tree-w": "--樹-w",
   "Resize the library tree": "調整庫樹的大小",
@@ -1388,5 +1388,11 @@
   "A track being removed is still referenced by USB history. Import and clear that history in rekordbox first.": "USB 歷史記錄仍會引用已刪除的曲目。首先匯入並清除 rekordbox 中的歷史記錄。",
   "Pioneer DJ recommends FAT32": "Pioneer DJ recommends FAT32",
   "Unlock anyway": "Unlock anyway",
-  "It looks like you haven’t made a backup yet. We strongly recommend creating one before using RBXport.": "It looks like you haven’t made a backup yet. We strongly recommend creating one before using RBXport."
+  "It looks like you haven’t made a backup yet. We strongly recommend creating one before using RBXport.": "It looks like you haven’t made a backup yet. We strongly recommend creating one before using RBXport.",
+  "Click to preview from here": "點擊從此處試聽",
+  "Mute the players": "將播放器靜音",
+  "Stop the players": "停止播放器",
+  "While a preview plays": "試聽播放時",
+  "Stop preview": "停止試聽",
+  "Stop preview (Esc)": "停止試聽 (Esc)"
 }

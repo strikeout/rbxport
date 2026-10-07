@@ -516,25 +516,27 @@ export interface Backend {
    * Position does not come back from any of these: it arrives on `onDeckTick`
    * ten times a second and the interface extrapolates between ticks.
    */
-  deckLoad(deck: DeckId, trackId: string, loadId: number): Promise<void>;
-  deckUnload(deck: DeckId): Promise<void>;
-  deckPlay(deck: DeckId): Promise<void>;
+  deckLoad(deck: VoiceId, trackId: string, loadId: number): Promise<void>;
+  deckUnload(deck: VoiceId): Promise<void>;
+  deckPlay(deck: VoiceId): Promise<void>;
   /**
    * Starts a deck after `delayMs` of silence, counted by the audio callback:
    * quantized play on a synced deck, held for the master's next beat.
    */
-  deckPlayAfter(deck: DeckId, delayMs: number): Promise<void>;
-  deckPause(deck: DeckId): Promise<void>;
-  deckSeek(deck: DeckId, positionMs: number): Promise<void>;
+  deckPlayAfter(deck: VoiceId, delayMs: number, positionMs?: number): Promise<void>;
+  deckPause(deck: VoiceId): Promise<void>;
+  deckSeek(deck: VoiceId, positionMs: number): Promise<void>;
+  /** Moves the playhead by `byMs` from where the engine has it now. */
+  deckMove(deck: VoiceId, byMs: number): Promise<void>;
   /**
    * Sets a loop between two points and turns it on. A head already past
    * the out point goes back to the in point. The deck rounds at the out
    * point itself, on the frame, with nothing faded at the seam.
    */
-  deckSetLoop(deck: DeckId, inMs: number, outMs: number): Promise<void>;
+  deckSetLoop(deck: VoiceId, inMs: number, outMs: number): Promise<void>;
   /** RELOOP (on): back in from the in point. EXIT (off): out, the range kept. */
-  deckLoopActive(deck: DeckId, on: boolean): Promise<void>;
-  deckClearLoop(deck: DeckId): Promise<void>;
+  deckLoopActive(deck: VoiceId, on: boolean): Promise<void>;
+  deckClearLoop(deck: VoiceId): Promise<void>;
   /**
    * Dragging the waveform like a record.
    *
@@ -543,9 +545,9 @@ export interface Backend {
    * pointer stops — rather than seeking. A seek per pointer move gives the
    * right place at the wrong speed: a burst of normal-speed audio each time.
    */
-  deckScrubBegin(deck: DeckId): Promise<void>;
-  deckScrubTo(deck: DeckId, positionMs: number): Promise<void>;
-  deckScrubEnd(deck: DeckId): Promise<void>;
+  deckScrubBegin(deck: VoiceId): Promise<void>;
+  deckScrubTo(deck: VoiceId, positionMs: number): Promise<void>;
+  deckScrubEnd(deck: VoiceId): Promise<void>;
   /** The master output level, 0 to +2 dB. It arrives back on the next tick. */
   setMasterLevel(level: number): Promise<void>;
   /**
@@ -593,13 +595,18 @@ export interface Backend {
    * A ratio rather than a BPM: what BPM that comes to depends on the track,
    * and the deck does not need to know the track's to play it faster.
    */
-  deckTempo(deck: DeckId, tempo: number): Promise<void>;
+  deckTempo(deck: VoiceId, tempo: number): Promise<void>;
   /** Master Tempo: whether the pitch is held while the speed changes. */
-  deckMasterTempo(deck: DeckId, on: boolean): Promise<void>;
+  deckMasterTempo(deck: VoiceId, on: boolean): Promise<void>;
   /** A click on every beat of the deck's grid while it plays. */
   deckMetronome(deck: DeckId, on: boolean): Promise<void>;
+  /**
+   * The grid the deck's metronome clicks on, as milliseconds and whether
+   * each beat is a downbeat. Nothing is saved.
+   */
+  setMetronomeGrid(deck: DeckId, beats: [number, boolean][]): Promise<void>;
   /** The key, in semitones from the track's own; −12 to 12. */
-  deckKeyShift(deck: DeckId, semitones: number): Promise<void>;
+  deckKeyShift(deck: VoiceId, semitones: number): Promise<void>;
   /** Preferences › Audio › Metronome: which click (1 to 3) and how loud. */
   setMetronome(sound: 1 | 2 | 3, volume: "small" | "middle" | "large"): Promise<void>;
   /**
@@ -619,6 +626,11 @@ export interface Backend {
   setChannelKill(deck: DeckId, band: EqBand, killed: boolean): Promise<void>;
   /** The deck's gain, 0 to 2 — up to +6 dB, as a mixer's trim gives. */
   setChannelTrim(deck: DeckId, trim: number): Promise<void>;
+  /**
+   * Silences a deck in the sum, or brings it back. The deck keeps its
+   * transport: a browser preview in "mute" mode lets the decks run unheard.
+   */
+  setChannelMuted(deck: DeckId, muted: boolean): Promise<void>;
   /** The crossfader: 0 is deck A alone, 1 is deck B alone, 0.5 is both. */
   setCrossfade(position: number): Promise<void>;
   /** EQ or ISOLATOR — the bottom of each band's travel, and nothing else. */
@@ -805,6 +817,9 @@ export interface Backend {
 /** Which deck. Two, named rather than indexed, as the mixer is. */
 export type DeckId = "a" | "b";
 
+/** Which voice of the engine: a deck, or `"p"`, the browser's preview. */
+export type VoiceId = DeckId | "p";
+
 /** Something an AppleScript asks of the window; see `src/lib/scripting.ts`. */
 export interface ScriptRequest {
   id: number;
@@ -922,6 +937,8 @@ export interface DeckTick {
 export interface Tick {
   a: DeckTick;
   b: DeckTick;
+  /** The browser's preview voice. */
+  p: DeckTick;
   /** The device's rate, which is what every frame count here is in. */
   sampleRate: number;
   /** The loudest sample the device was given last callback, per channel. */
@@ -953,7 +970,7 @@ export interface Meters {
 
 /** A deck finishing a load, or failing one. */
 export interface DeckEvent {
-  deck: DeckId;
+  deck: VoiceId;
   /** The request this completion belongs to, so superseded loads are ignored. */
   loadId: number;
   totalFrames: number;

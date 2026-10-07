@@ -355,7 +355,7 @@
   "Selected: 1 Track": "Vybráno: 1 stopa",
   "rbxport": "rbxport",
   "Dual control": "Dvojité ovládání",
-  "Link the waveform controls and beat jump across both decks.": "Propojte ovládací prvky průběhu a skákejte přes oba balíčky.",
+  "Link the beat jump across both decks.": "Propojit skok o doby na obou přehrávačích.",
   "b": "b",
   "--tree-w": "--strom-š",
   "Resize the library tree": "Změňte velikost stromu knihovny",
@@ -1383,5 +1383,11 @@
   "A track being removed is still referenced by USB history. Import and clear that history in rekordbox first.": "Odstraňovaná skladba je stále odkazována historií USB. Nejprve importujte a vymažte historii v softwaru rekordbox.",
   "Pioneer DJ recommends FAT32": "Pioneer DJ recommends FAT32",
   "Unlock anyway": "Unlock anyway",
-  "It looks like you haven’t made a backup yet. We strongly recommend creating one before using RBXport.": "It looks like you haven’t made a backup yet. We strongly recommend creating one before using RBXport."
+  "It looks like you haven’t made a backup yet. We strongly recommend creating one before using RBXport.": "It looks like you haven’t made a backup yet. We strongly recommend creating one before using RBXport.",
+  "Click to preview from here": "Kliknutím přehrajete ukázku od tohoto místa",
+  "Mute the players": "Ztlumit přehrávače",
+  "Stop the players": "Zastavit přehrávače",
+  "While a preview plays": "Během přehrávání ukázky",
+  "Stop preview": "Zastavit ukázku",
+  "Stop preview (Esc)": "Zastavit ukázku (Esc)"
 }

@@ -45,7 +45,7 @@ const idle: Tick["a"] = {
 function stubBackend(): Backend {
   return {
     deckState: () => Promise.resolve({
-      a: idle, b: idle, sampleRate: 44_100, peakLeft: 0, peakRight: 0, master: engineLevel, reduction: 0, shiftsKey: true,
+      a: idle, b: idle, p: idle, sampleRate: 44_100, peakLeft: 0, peakRight: 0, master: engineLevel, reduction: 0, shiftsKey: true,
     } satisfies Tick),
     onDeckTick: () => () => {},
     onDeckEvent: () => () => {},

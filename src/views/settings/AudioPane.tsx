@@ -173,6 +173,18 @@ export function AudioPane({ limiter, onLimiterChange, reduction, vu, peakLeft = 
       />
     </Section>
 
+    <Section title="Preview">
+      <Radios
+        label="While a preview plays"
+        value={prefs.previewMainPlayers}
+        choices={[
+          { value: "mute", label: "Mute the players" },
+          { value: "stop", label: "Stop the players" },
+        ]}
+        onChange={(previewMainPlayers) => set({ previewMainPlayers })}
+      />
+    </Section>
+
     <Section title="RBXport Master Limiter">
       <div className={limiterStyles.panel}>
       <div className={limiterStyles.header}>
