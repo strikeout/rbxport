@@ -37,6 +37,11 @@ the version numbers [Semantic Versioning](https://semver.org/).
   recovery.
 
 ### Added
+- Preferences > View > Traffic Light has a Jump colours switch. When it is
+  on, each lit key shows how the harmony moves from the loaded track: green
+  for the same key, teal for the relative major or minor, yellow-green for one
+  step round the Camelot wheel, and amber for one step round and across. When
+  it is off, every lit key is green, as in rekordbox.
 - The loop buttons of the two-player layout now work. AU starts a beat loop
   of the length in the selector. MA sets the IN and OUT points by hand.
   With Q on, every loop point is on the beat grid. OUT exits the loop or

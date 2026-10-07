@@ -292,6 +292,14 @@
    the text in black, selected or not. */
 .cell[data-lit],
 .row[data-selected] .cell[data-lit] { background: var(--c-traffic-light); color: var(--c-black); }
+/* Jump colours in Preferences: each lit key takes the colour of its jump from
+   the loaded track. The same key keeps the green. */
+.cell[data-jump="relative"],
+.row[data-selected] .cell[data-jump="relative"] { background: var(--c-traffic-relative); }
+.cell[data-jump="adjacent"],
+.row[data-selected] .cell[data-jump="adjacent"] { background: var(--c-traffic-adjacent); }
+.cell[data-jump="diagonal"],
+.row[data-selected] .cell[data-jump="diagonal"] { background: var(--c-traffic-diagonal); }
 
 .row[data-selected] .cell,
 .row[data-selected] .attr,

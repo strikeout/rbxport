@@ -142,6 +142,9 @@
   --c-pref-key-badge: #222222; /* measured from the Preferences captures docs/screenshots (rekordbox 7.2.11, 2x, 9.46.53 to 9.49.51 PM): the key badge beside a shortcut on the Keyboard pane, (34,34,34) */
   --c-traffic-master: #282828; /* measured from the 2-player capture docs/screenshots (Screenshot 2026-09-08 at 3.00.12 PM, rekordbox 7.2.11, 2x): the MASTER menu's box above the track list, (40,40,40); its 1pt underline is padActive */
   --c-traffic-light: #64FF00; /* UNMEASURED - the lit key cell in a capture pasted into chat on 2026-09-10 that is not on disk: a bright green with black text; re-sample when the capture lands in docs/screenshots */
+  --c-traffic-relative: #00D0C0; /* not a rekordbox colour; chosen for this app: Jump colours, the relative major or minor (2A to 2B) */
+  --c-traffic-adjacent: #C8F000; /* not a rekordbox colour; chosen for this app: Jump colours, one step round the wheel (2A to 1A or 3A) */
+  --c-traffic-diagonal: #FFB000; /* not a rekordbox colour; chosen for this app: Jump colours, one step round the wheel and across (2A to 1B or 3B) */
   --c-link-strip: #282828; /* docs/screenshots 2026-09-13 11.16.28 AM (rekordbox 7.2.11 EXPORT, 2x, LINK on, both decks empty): the band behind the LINK button and the decks, (40,40,40); the deck and mixer boxes are the same grey, cut from it by a 1pt black line */
   --c-link-button: #191919; /* docs/screenshots 2026-09-13 11.16.28 AM (rekordbox 7.2.11 EXPORT, 2x, LINK on, both decks empty): the LINK button's fill, (25,25,25); with LINK off it is the 1pt rounded border on a band-grey button */
   --c-link-strip-off: #323232; /* docs/screenshots 2026-09-13 11.18.36 AM (rekordbox 7.2.11 EXPORT, 2x, LINK off): the band with LINK off, (50,50,50), the LINK button the same */
