@@ -1388,5 +1388,7 @@
   "Click to preview from here": "Buradan ön dinleme için tıklayın",
   "Mute the players": "Çalarların sesini kapat",
   "Stop the players": "Çalarları durdur",
-  "While a preview plays": "Ön dinleme sırasında"
+  "While a preview plays": "Ön dinleme sırasında",
+  "Stop preview": "Ön dinlemeyi durdur",
+  "Stop preview (Esc)": "Ön dinlemeyi durdur (Esc)"
 }

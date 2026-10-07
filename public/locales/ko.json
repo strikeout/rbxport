@@ -1387,5 +1387,7 @@
   "Click to preview from here": "클릭하면 이 위치부터 미리 듣기합니다",
   "Mute the players": "플레이어 음소거",
   "Stop the players": "플레이어 정지",
-  "While a preview plays": "미리 듣기 중"
+  "While a preview plays": "미리 듣기 중",
+  "Stop preview": "미리 듣기 정지",
+  "Stop preview (Esc)": "미리 듣기 정지 (Esc)"
 }

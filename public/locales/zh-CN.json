@@ -1392,5 +1392,7 @@
   "Click to preview from here": "点击从此处试听",
   "Mute the players": "将播放器静音",
   "Stop the players": "停止播放器",
-  "While a preview plays": "试听播放时"
+  "While a preview plays": "试听播放时",
+  "Stop preview": "停止试听",
+  "Stop preview (Esc)": "停止试听 (Esc)"
 }

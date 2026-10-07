@@ -1390,5 +1390,7 @@
   "Click to preview from here": "Haz clic para preescuchar desde aquí",
   "Mute the players": "Silenciar los reproductores",
   "Stop the players": "Detener los reproductores",
-  "While a preview plays": "Mientras suena una preescucha"
+  "While a preview plays": "Mientras suena una preescucha",
+  "Stop preview": "Detener la preescucha",
+  "Stop preview (Esc)": "Detener la preescucha (Esc)"
 }

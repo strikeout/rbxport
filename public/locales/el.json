@@ -1389,5 +1389,7 @@
   "Click to preview from here": "Κάντε κλικ για προακρόαση από εδώ",
   "Mute the players": "Σίγαση των players",
   "Stop the players": "Διακοπή των players",
-  "While a preview plays": "Κατά την προακρόαση"
+  "While a preview plays": "Κατά την προακρόαση",
+  "Stop preview": "Διακοπή προακρόασης",
+  "Stop preview (Esc)": "Διακοπή προακρόασης (Esc)"
 }

@@ -1387,5 +1387,7 @@
   "Click to preview from here": "Kliknutím přehrajete ukázku od tohoto místa",
   "Mute the players": "Ztlumit přehrávače",
   "Stop the players": "Zastavit přehrávače",
-  "While a preview plays": "Během přehrávání ukázky"
+  "While a preview plays": "Během přehrávání ukázky",
+  "Stop preview": "Zastavit ukázku",
+  "Stop preview (Esc)": "Zastavit ukázku (Esc)"
 }

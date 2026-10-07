@@ -1383,5 +1383,7 @@
   "Click to preview from here": "Klicka för att förhandslyssna härifrån",
   "Mute the players": "Tysta spelarna",
   "Stop the players": "Stoppa spelarna",
-  "While a preview plays": "Medan en förhandslyssning spelas"
+  "While a preview plays": "Medan en förhandslyssning spelas",
+  "Stop preview": "Stoppa förhandslyssning",
+  "Stop preview (Esc)": "Stoppa förhandslyssning (Esc)"
 }

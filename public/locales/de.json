@@ -1384,5 +1384,7 @@
   "Click to preview from here": "Klicken, um ab hier vorzuhören",
   "Mute the players": "Player stummschalten",
   "Stop the players": "Player stoppen",
-  "While a preview plays": "Während eine Vorschau spielt"
+  "While a preview plays": "Während eine Vorschau spielt",
+  "Stop preview": "Vorhören stoppen",
+  "Stop preview (Esc)": "Vorhören stoppen (Esc)"
 }

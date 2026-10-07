@@ -224,7 +224,24 @@ export const WaveformPreview = memo(function WaveformPreview({
         style={{ width: `${width}px`, height: `${height}px` }}
         aria-hidden
       />
-      {previewing ? <span ref={head} className={styles.head} aria-hidden /> : null}
+      {previewing ? (
+        <>
+          <span ref={head} className={styles.head} aria-hidden />
+          {/* Over the left end of the waveform rather than beside it: a
+              narrower canvas would render the row's waveform again. */}
+          <button
+            type="button"
+            className={styles.stop}
+            aria-label="Stop preview"
+            title={tooltips ? "Stop preview (Esc)" : undefined}
+            onMouseDown={(event) => event.stopPropagation()}
+            onClick={(event) => {
+              event.stopPropagation();
+              preview.stop();
+            }}
+          />
+        </>
+      ) : null}
     </span>
   );
 });

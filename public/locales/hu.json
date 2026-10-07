@@ -1387,5 +1387,7 @@
   "Click to preview from here": "Kattintson az előhallgatáshoz innen",
   "Mute the players": "Lejátszók némítása",
   "Stop the players": "Lejátszók leállítása",
-  "While a preview plays": "Előhallgatás közben"
+  "While a preview plays": "Előhallgatás közben",
+  "Stop preview": "Előhallgatás leállítása",
+  "Stop preview (Esc)": "Előhallgatás leállítása (Esc)"
 }

@@ -1381,5 +1381,7 @@
   "Click to preview from here": "Klik for at forhøre herfra",
   "Mute the players": "Slå afspillerne fra",
   "Stop the players": "Stop afspillerne",
-  "While a preview plays": "Mens en forhøring spiller"
+  "While a preview plays": "Mens en forhøring spiller",
+  "Stop preview": "Stop forhøring",
+  "Stop preview (Esc)": "Stop forhøring (Esc)"
 }

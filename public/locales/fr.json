@@ -1387,5 +1387,7 @@
   "Click to preview from here": "Cliquez pour pré-écouter à partir d'ici",
   "Mute the players": "Couper le son des lecteurs",
   "Stop the players": "Arrêter les lecteurs",
-  "While a preview plays": "Pendant une pré-écoute"
+  "While a preview plays": "Pendant une pré-écoute",
+  "Stop preview": "Arrêter la pré-écoute",
+  "Stop preview (Esc)": "Arrêter la pré-écoute (Échap)"
 }

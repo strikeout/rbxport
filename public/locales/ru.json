@@ -1392,5 +1392,7 @@
   "Click to preview from here": "Нажмите, чтобы прослушать отсюда",
   "Mute the players": "Заглушить плееры",
   "Stop the players": "Остановить плееры",
-  "While a preview plays": "Во время предпрослушивания"
+  "While a preview plays": "Во время предпрослушивания",
+  "Stop preview": "Остановить предпрослушивание",
+  "Stop preview (Esc)": "Остановить предпрослушивание (Esc)"
 }

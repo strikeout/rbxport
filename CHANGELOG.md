@@ -29,8 +29,8 @@ the version numbers [Semantic Versioning](https://semver.org/).
   plays it again. The one-player layout uses the same controls in the same
   way.
 - Click a preview waveform in the track list to play that track from the
-  clicked position. A line shows the playhead. Press Escape to stop the
-  preview. The preview also stops at the end of the track. Preferences ›
+  clicked position. A line shows the playhead. To stop the preview, click
+  the stop button at the left of the waveform or press Escape. The preview also stops at the end of the track. Preferences ›
   Audio › Preview sets what the decks do during a preview. They mute and
   continue to play, or they stop and start again after the preview.
 - Right-clicking the rbxport version in the status bar opens the current log

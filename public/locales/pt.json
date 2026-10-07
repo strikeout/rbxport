@@ -1391,5 +1391,7 @@
   "Click to preview from here": "Clique para pré-ouvir a partir daqui",
   "Mute the players": "Silenciar os players",
   "Stop the players": "Parar os players",
-  "While a preview plays": "Durante uma pré-escuta"
+  "While a preview plays": "Durante uma pré-escuta",
+  "Stop preview": "Parar a pré-escuta",
+  "Stop preview (Esc)": "Parar a pré-escuta (Esc)"
 }

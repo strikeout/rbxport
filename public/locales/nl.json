@@ -1384,5 +1384,7 @@
   "Click to preview from here": "Klik om vanaf hier voor te beluisteren",
   "Mute the players": "Spelers dempen",
   "Stop the players": "Spelers stoppen",
-  "While a preview plays": "Tijdens het voorbeluisteren"
+  "While a preview plays": "Tijdens het voorbeluisteren",
+  "Stop preview": "Voorbeluisteren stoppen",
+  "Stop preview (Esc)": "Voorbeluisteren stoppen (Esc)"
 }

@@ -908,6 +908,8 @@
   "Stop",
   "Stop after the current file operation finishes",
   "Stop backup",
+  "Stop preview",
+  "Stop preview (Esc)",
   "Stop the players",
   "Stopping…",
   "Sub Browser",
