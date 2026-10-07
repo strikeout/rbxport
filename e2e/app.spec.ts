@@ -2503,6 +2503,18 @@ test("the mixer belongs to the two-deck layouts and to nothing else", async ({ p
   await low.click();
   await expect(low).toHaveAttribute("aria-pressed", "false");
 
+  // Y kills Player A's LOW and X kills Player B's, each a toggle too.
+  const lowB = mixer.getByRole("button", { name: "LOW" }).last();
+  await page.keyboard.press("y");
+  await expect(low).toHaveAttribute("aria-pressed", "true");
+  await expect(lowB).toHaveAttribute("aria-pressed", "false");
+  await page.keyboard.press("x");
+  await expect(lowB).toHaveAttribute("aria-pressed", "true");
+  await page.keyboard.press("y");
+  await page.keyboard.press("x");
+  await expect(low).toHaveAttribute("aria-pressed", "false");
+  await expect(lowB).toHaveAttribute("aria-pressed", "false");
+
   // The crossfader starts in the middle, where both decks are heard whole.
   const fader = mixer.getByRole("slider", { name: "Crossfader" });
   await expect(fader).toHaveAttribute("aria-valuenow", "0.5");
@@ -2746,10 +2758,10 @@ test("the deck answers rekordbox's own keys", async ({ page }) => {
   await page.keyboard.press(" ");
   await expect(page.getByRole("button", { name: "Play", exact: true })).toBeVisible();
 
-  // Q toggles quantize.
+  // T toggles quantize.
   const q = page.getByRole("button", { name: "Quantize" });
   await expect(q).toHaveAttribute("aria-pressed", "true");
-  await page.keyboard.press("q");
+  await page.keyboard.press("t");
   await expect(q).toHaveAttribute("aria-pressed", "false");
 
   // F10, F11 and F12 are the three cue lists.
@@ -2760,7 +2772,7 @@ test("the deck answers rekordbox's own keys", async ({ page }) => {
 
   // And none of them fire into the search box.
   await page.getByPlaceholder(/Search/).first().click();
-  await page.keyboard.press("q");
+  await page.keyboard.press("t");
   await expect(q).toHaveAttribute("aria-pressed", "false");
 });
 

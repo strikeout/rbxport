@@ -252,6 +252,9 @@ test("Keyboard lists rekordbox's ten groups, with the unbuilt rows greyed", asyn
   const timeMode = dialog.locator('[class*="keyRow"]', { hasText: "Time Mode" }).first();
   await expect(timeMode).toContainText(/^Time ModeT$/);
   await expect(timeMode).toHaveAttribute("data-dim", "");
+  // The EQ kills are this app's own rows, at the end of the deck's group.
+  const lowKill = dialog.locator('[class*="keyRow"]', { hasText: "Low Kill" }).first();
+  await expect(lowKill.getByRole("button", { name: "Low Kill key" })).toHaveText("Y");
   // A built row's key is a button: click it, press a key, and that is the key.
   const loopIn = dialog.locator('[class*="keyRow"]', { hasText: "Loop In" }).first();
   await expect(loopIn).not.toHaveAttribute("data-dim");

@@ -43,6 +43,10 @@ the version numbers [Semantic Versioning](https://semver.org/).
   the stop button at the left of the waveform or press Escape. The preview also stops at the end of the track. Preferences ›
   Audio › Preview sets what the decks do during a preview. They mute and
   continue to play, or they stop and start again after the preview.
+- Keys toggle the LOW, MID and HIGH kills of each player in the two-player
+  layout. Player A uses Y, A and Q. Player B uses X, S and W. Preferences ›
+  Keyboard lists the keys under Player A and Player B, where you can change
+  them.
 - Right-clicking the rbxport version in the status bar opens the current log
   in the operating system's default log viewer.
 - On a computer with no rekordbox library, the app asks whether to create a
@@ -56,6 +60,9 @@ the version numbers [Semantic Versioning](https://semver.org/).
 ### Changed
 - In the two-player layout, the two waveforms always zoom together. DUAL
   CONTROL now links only the beat jump.
+- The EQ kills use four keys from the rekordbox preset. Thus four commands
+  have new keys. Quantize is T. Memory Cue 1 is E. Memory Cue 2 is U.
+  Delete Memory Cue is V. Player B uses the same keys with shift.
 - Restoring a backup moved to the separate RBXport Restore app, which can put
   back the whole backup or only some of it. Preferences › Backups creates and
   deletes backups, and says where to restore them.
