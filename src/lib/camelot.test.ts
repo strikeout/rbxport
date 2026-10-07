@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  compatibleKeys, fromCamelot, normalizeKey, toCamelot, trafficLightCodes, trafficLightLit, transposeKey,
+  compatibleKeys, fromCamelot, normalizeKey, toCamelot, trafficLightCodes, trafficLightJump, transposeKey,
 } from "./camelot";
 
 describe("camelot", () => {
@@ -67,9 +67,21 @@ describe("the Traffic Light's reach", () => {
     // Abm is 1A: its neighbours are 12A and 2A.
     expect(trafficLightCodes("Abm", "related2")).toEqual(["1A", "1B", "12A", "2A"]);
     expect(trafficLightCodes("Unknown", "related3")).toEqual([]);
-    expect(trafficLightLit("F#", "Ebm", "related1")).toBe(true);
-    expect(trafficLightLit("Am", "Ebm", "related3")).toBe(false);
-    expect(trafficLightLit("", "Ebm", "related3")).toBe(false);
+    expect(trafficLightJump("F#", "Ebm", "related1")).toBe("relative");
+    expect(trafficLightJump("Am", "Ebm", "related3")).toBeNull();
+    expect(trafficLightJump("", "Ebm", "related3")).toBeNull();
+  });
+
+  it("names the jump from the loaded track, within the reach", () => {
+    expect(trafficLightJump("2A", "2A", "related3")).toBe("same");
+    expect(trafficLightJump("2B", "2A", "related3")).toBe("relative");
+    expect(trafficLightJump("1A", "2A", "related3")).toBe("adjacent");
+    expect(trafficLightJump("3A", "2A", "related3")).toBe("adjacent");
+    expect(trafficLightJump("1B", "2A", "related3")).toBe("diagonal");
+    expect(trafficLightJump("3B", "2A", "related3")).toBe("diagonal");
+    expect(trafficLightJump("12A", "1A", "related2")).toBe("adjacent");
+    expect(trafficLightJump("1B", "2A", "related2")).toBeNull();
+    expect(trafficLightJump("2B", "2A", "same")).toBeNull();
   });
 });
 
@@ -79,8 +91,8 @@ describe("a library that stores Camelot codes", () => {
     expect(toCamelot("08a")).toBe("8A");
     expect(toCamelot("13A")).toBe("");
     // A row in 9A lights against a loaded track in Am, which is 8A.
-    expect(trafficLightLit("9A", "Am", "related3")).toBe(true);
-    expect(trafficLightLit("Em", "8A", "related3")).toBe(true);
-    expect(trafficLightLit("7A", "7A", "same")).toBe(true);
+    expect(trafficLightJump("9A", "Am", "related3")).toBe("adjacent");
+    expect(trafficLightJump("Em", "8A", "related3")).toBe("adjacent");
+    expect(trafficLightJump("7A", "7A", "same")).toBe("same");
   });
 });

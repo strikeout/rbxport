@@ -34,7 +34,7 @@ import { RecordIcon } from "@/components/icons";
 import { EXTRA_COLUMNS, type ColumnKey, type ColumnSpec } from "@/lib/columns";
 import { COLOR_NAMES } from "@/lib/trackFilter";
 import { browseListVars, browseScale, formatKey } from "@/lib/preferences";
-import { trafficLightLit, type TrafficLightReach } from "@/lib/camelot";
+import { trafficLightJump, type TrafficLightReach } from "@/lib/camelot";
 import { TickIcon } from "@/components/icons";
 import type { TrafficLightSource } from "@/lib/session";
 import { usePreferences, useTooltip } from "@/store/usePreferences";
@@ -346,7 +346,7 @@ const EditableCell = memo(function EditableCell({
 
 const TrackRow = memo(function TrackRow({
   row, top, selected, onSelect, onOpen, onDragStart, onDragEnd, index, columns, onRate,
-  onComment, onEditField, onEditBlocked, onMenu, keyDisplay, previewCues, clickToEdit, tooltips, trafficKey, trafficReach,
+  onComment, onEditField, onEditBlocked, onMenu, keyDisplay, previewCues, clickToEdit, tooltips, trafficKey, trafficReach, trafficJumpColours,
   reorderable, isLocalDrag, dropEdge, onReorderOver, onReorderDrop, startupCache,
 }: {
   row: RowDto | undefined;
@@ -364,6 +364,8 @@ const TrackRow = memo(function TrackRow({
   /** The Traffic Light: the key rows light against, and how far around it. Null lights nothing. */
   trafficKey: string | null;
   trafficReach: TrafficLightReach;
+  /** Preferences: a lit key takes the colour of its jump, not the one green. */
+  trafficJumpColours: boolean;
   onSelect: (index: number, id: string, e: React.MouseEvent) => void;
   /** Load the track into the player. A double-click, as in rekordbox. */
   onOpen: (index: number) => void;
@@ -606,13 +608,14 @@ const TrackRow = memo(function TrackRow({
         }
         if (col.key === "key") {
           // The Traffic Light: a key that goes with the loaded track's is lit.
-          const lit = trafficKey !== null && trafficLightLit(row.key, trafficKey, trafficReach);
+          const jump = trafficKey === null ? null : trafficLightJump(row.key, trafficKey, trafficReach);
           return (
             <div
               key={col.key}
               className={styles.cell}
               data-col={col.key}
-              data-lit={lit || undefined}
+              data-lit={jump !== null || undefined}
+              data-jump={trafficJumpColours && jump !== null ? jump : undefined}
               role="gridcell"
             >
               {formatKey(row.key, keyDisplay)}
@@ -1477,6 +1480,7 @@ export const TrackTable = memo(function TrackTable({
                 tooltips={tooltips}
                 trafficKey={trafficKey}
                 trafficReach={preferences.view.trafficLight}
+                trafficJumpColours={preferences.view.trafficLightJumpColours}
                 top={item.start - COL_HEADER_H}
                 selected={row ? selection.ids.has(row.id) : false}
                 onSelect={handleSelect}

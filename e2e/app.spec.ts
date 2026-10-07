@@ -936,6 +936,31 @@ test("the Traffic Light lights the keys that go with the loaded track's", async 
   }
 });
 
+test("the Traffic Light colours each jump and follows the deck's key shift", async ({ page }) => {
+  await page.goto("/");
+  await expect(page.getByTestId("browser-title")).toContainText("Tracks)");
+  const keys = page.locator('[role="gridcell"][data-col="key"]');
+  const lit = page.locator('[role="gridcell"][data-col="key"][data-lit]');
+  await page.locator('[role="gridcell"][data-col="title"]').first().dblclick();
+  await expect(keys.first()).toHaveAttribute("data-lit", "true");
+  // The rekordbox green by default: no jump colours.
+  await expect(page.locator('[role="gridcell"][data-col="key"][data-jump]')).toHaveCount(0);
+
+  await page.getByRole("banner").getByRole("button", { name: "Settings" }).click();
+  const dialog = page.getByRole("dialog", { name: "Preferences" });
+  await dialog.getByRole("switch", { name: "Jump colours" }).click();
+  await page.keyboard.press("Escape");
+  await expect(keys.first()).toHaveAttribute("data-jump", "same");
+  const jumps = await lit.evaluateAll((cells) => cells.map((cell) => cell.getAttribute("data-jump")));
+  expect(jumps.length).toBeGreaterThan(1);
+  for (const jump of jumps) expect(["same", "relative", "adjacent", "diagonal"]).toContain(jump);
+
+  // A semitone up moves the key seven steps round the wheel: the loaded
+  // track's own key no longer lights.
+  await page.getByRole("region", { name: "Preview player" }).getByRole("button", { name: "Key up a semitone" }).click();
+  await expect(keys.first()).not.toHaveAttribute("data-lit", /.*/);
+});
+
 test("the # column sorts a playlist by its own order, and back", async ({ page }) => {
   await page.goto("/");
   await expect(page.getByTestId("browser-title")).toContainText("Tracks)");

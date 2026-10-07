@@ -139,6 +139,11 @@ export interface ViewPreferences {
   vocalFull: boolean;
   /** Traffic Light: how far around the loaded track's key the browser lights. */
   trafficLight: TrafficLightReach;
+  /**
+   * Traffic Light › Jump colours: each lit key takes the colour of its jump
+   * from the loaded track. Off gives the rekordbox green for every lit key.
+   */
+  trafficLightJumpColours: boolean;
   /** Color › Waveform color: the deck's palette — BLUE, RGB or 3Band. */
   waveformColor: WaveformColor;
   /** Color › HOT CUE color. */
@@ -276,6 +281,7 @@ export const DEFAULT_PREFERENCES: Preferences = {
     phraseLabels: true,
     vocalFull: true,
     trafficLight: "related3",
+    trafficLightJumpColours: false,
     waveformColor: "3band",
     hotCueColor: "colorful",
     beatCount: "position",
@@ -446,6 +452,7 @@ export function sanitisePreferences(value: unknown): Preferences {
       phraseLabels: bool(view.phraseLabels, d.view.phraseLabels),
       vocalFull: bool(view.vocalFull, d.view.vocalFull),
       trafficLight: oneOf(view.trafficLight, REACHES, d.view.trafficLight),
+      trafficLightJumpColours: bool(view.trafficLightJumpColours, d.view.trafficLightJumpColours),
       waveformColor: oneOf(view.waveformColor, WAVEFORM_COLORS, d.view.waveformColor),
       hotCueColor: oneOf(view.hotCueColor, HOT_CUE_COLORS, d.view.hotCueColor),
       beatCount: oneOf(view.beatCount, BEAT_COUNTS, d.view.beatCount),
