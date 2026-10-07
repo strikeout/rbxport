@@ -8,6 +8,9 @@ the version numbers [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Fixed
+- A change to the beat loop length now applies to a loop that plays. Before,
+  you had to exit the loop and start it again. A head after the new end goes
+  back by whole loops, so it stays in time.
 - A deck with BEAT SYNC and Q on now starts on the master's beat every time.
   Before, some presses of PLAY started the deck at once, off the beat.
 - A dragged waveform now lands in phase with the master. This applies to a
@@ -20,6 +23,11 @@ the version numbers [Semantic Versioning](https://semver.org/).
   recovery.
 
 ### Added
+- The loop buttons of the two-player layout now work. AU starts a beat loop
+  of the length in the selector. MA sets the IN and OUT points by hand.
+  With Q on, every loop point is on the beat grid. OUT exits the loop or
+  plays it again. The one-player layout uses the same controls in the same
+  way.
 - Click a preview waveform in the track list to play that track from the
   clicked position. A line shows the playhead. Press Escape to stop the
   preview. The preview also stops at the end of the track. Preferences ›
