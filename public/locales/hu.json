@@ -380,7 +380,7 @@
   "Selected: 1 Track": "Kiválasztva: 1 szám",
   "rbxport": "rbxport",
   "Dual control": "Kettős vezérlés",
-  "Link the waveform controls and beat jump across both decks.": "Kapcsolja össze a hullámforma-vezérlőket, és ugorjon át mindkét fedélzeten.",
+  "Link the beat jump across both decks.": "A beat jump összekapcsolása mindkét decken.",
   "b": "b",
   "--tree-w": "--fa-w",
   "Resize the library tree": "Méretezze át a könyvtárfát",
@@ -1429,5 +1429,11 @@
   "The two existing device libraries disagree. Reconcile them in rekordbox before their first sync here.": "A két meglévő eszközkönyvtár nem ért egyet. Egyeztesd őket a rekordboxban az első szinkronizálás előtt.",
   "This USB belongs to a different or older unverified master library. Import its contents in rekordbox before changing its ownership.": "Ez az USB egy másik vagy régebbi, ellenőrizetlen főkönyvtárhoz tartozik. Importálja a tartalmát a rekordboxba, mielőtt megváltoztatná a tulajdonjogát.",
   "OneLibrary contains cue records that this export would replace. Import the cues in rekordbox first.": "A OneLibrary cue rekordokat tartalmaz, amelyeket ez az exportálás lecserélne. Először importálja a jelzéseket a rekordboxba.",
-  "A track being removed is still referenced by USB history. Import and clear that history in rekordbox first.": "Az USB-előzmények továbbra is hivatkoznak az eltávolítandó műsorszámra. Először importálja és törölje az előzményeket a rekordboxból."
+  "A track being removed is still referenced by USB history. Import and clear that history in rekordbox first.": "Az USB-előzmények továbbra is hivatkoznak az eltávolítandó műsorszámra. Először importálja és törölje az előzményeket a rekordboxból.",
+  "Click to preview from here": "Kattintson az előhallgatáshoz innen",
+  "Mute the players": "Lejátszók némítása",
+  "Stop the players": "Lejátszók leállítása",
+  "While a preview plays": "Előhallgatás közben",
+  "Stop preview": "Előhallgatás leállítása",
+  "Stop preview (Esc)": "Előhallgatás leállítása (Esc)"
 }

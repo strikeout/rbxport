@@ -366,7 +366,7 @@
   "Selected: 1 Track": "Seçilen: 1 Parça",
   "rbxport": "rbxport",
   "Dual control": "Çift kontrol",
-  "Link the waveform controls and beat jump across both decks.": "Dalga formu kontrollerini bağlayın ve her iki deckte de atlamayı tamamlayın.",
+  "Link the beat jump across both decks.": "Her iki decks için beat jump'ı bağla.",
   "b": "b",
   "--tree-w": "--ağaç-w",
   "Resize the library tree": "Kütüphane ağacını yeniden boyutlandırın",
@@ -1430,5 +1430,11 @@
   "The two existing device libraries disagree. Reconcile them in rekordbox before their first sync here.": "Mevcut iki cihaz kütüphanesi aynı fikirde değil. Buradaki ilk senkronizasyondan önce bunları rekordbox'ta uzlaştırın.",
   "This USB belongs to a different or older unverified master library. Import its contents in rekordbox before changing its ownership.": "Bu USB, farklı veya daha eski, doğrulanmamış bir ana kitaplığa ait. Sahipliğini değiştirmeden önce içeriğini rekordbox'a aktarın.",
   "OneLibrary contains cue records that this export would replace. Import the cues in rekordbox first.": "OneLibrary, bu dışa aktarımın yerini alacağı işaret kayıtlarını içerir. Önce ipuçlarını rekordbox'a aktarın.",
-  "A track being removed is still referenced by USB history. Import and clear that history in rekordbox first.": "Kaldırılan bir parçaya USB geçmişi tarafından hâlâ başvurulmaktadır. Öncelikle bu geçmişi rekordbox'a aktarın ve temizleyin."
+  "A track being removed is still referenced by USB history. Import and clear that history in rekordbox first.": "Kaldırılan bir parçaya USB geçmişi tarafından hâlâ başvurulmaktadır. Öncelikle bu geçmişi rekordbox'a aktarın ve temizleyin.",
+  "Click to preview from here": "Buradan ön dinleme için tıklayın",
+  "Mute the players": "Çalarların sesini kapat",
+  "Stop the players": "Çalarları durdur",
+  "While a preview plays": "Ön dinleme sırasında",
+  "Stop preview": "Ön dinlemeyi durdur",
+  "Stop preview (Esc)": "Ön dinlemeyi durdur (Esc)"
 }

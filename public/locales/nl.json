@@ -398,7 +398,7 @@
   "Selected: 1 Track": "Geselecteerd: 1 spoor",
   "rbxport": "rbxport",
   "Dual control": "Dubbele controle",
-  "Link the waveform controls and beat jump across both decks.": "Koppel de golfvormbedieningen en beatsprong over beide decks.",
+  "Link the beat jump across both decks.": "Koppel de beatsprong op beide decks.",
   "b": "b",
   "--tree-w": "--boom-w",
   "Resize the library tree": "Wijzig het formaat van de bibliotheekboom",
@@ -1427,5 +1427,11 @@
   "The two existing device libraries disagree. Reconcile them in rekordbox before their first sync here.": "De twee bestaande apparaatbibliotheken zijn het daar niet mee eens. Stem ze hier af in rekordbox vóór hun eerste synchronisatie.",
   "This USB belongs to a different or older unverified master library. Import its contents in rekordbox before changing its ownership.": "Deze USB behoort tot een andere of oudere, niet-geverifieerde hoofdbibliotheek. Importeer de inhoud ervan in rekordbox voordat u de eigenaar ervan wijzigt.",
   "OneLibrary contains cue records that this export would replace. Import the cues in rekordbox first.": "OneLibrary bevat cue-records die door deze export zouden worden vervangen. Importeer eerst de signalen in rekordbox.",
-  "A track being removed is still referenced by USB history. Import and clear that history in rekordbox first.": "Naar een track die wordt verwijderd, wordt nog steeds verwezen in de USB-geschiedenis. Importeer en wis die geschiedenis eerst in rekordbox."
+  "A track being removed is still referenced by USB history. Import and clear that history in rekordbox first.": "Naar een track die wordt verwijderd, wordt nog steeds verwezen in de USB-geschiedenis. Importeer en wis die geschiedenis eerst in rekordbox.",
+  "Click to preview from here": "Klik om vanaf hier voor te beluisteren",
+  "Mute the players": "Spelers dempen",
+  "Stop the players": "Spelers stoppen",
+  "While a preview plays": "Tijdens het voorbeluisteren",
+  "Stop preview": "Voorbeluisteren stoppen",
+  "Stop preview (Esc)": "Voorbeluisteren stoppen (Esc)"
 }

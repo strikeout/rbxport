@@ -43,6 +43,10 @@ function tickAt(seconds: number, generation: number, playing = true, tempo = 1):
       frames: 0, totalFrames: 0, generation: 0, playing: false, loaded: false,
       tempo: 1, masterTempo: false, keyShift: 0, startInFrames: 0, loopInFrames: 0, loopOutFrames: 0, looping: false,
     },
+    p: {
+      frames: 0, totalFrames: 0, generation: 0, playing: false, loaded: false,
+      tempo: 1, masterTempo: false, keyShift: 0, startInFrames: 0, loopInFrames: 0, loopOutFrames: 0, looping: false,
+    },
     sampleRate: RATE,
     peakLeft: 0,
     peakRight: 0,
@@ -329,4 +333,17 @@ it("holds a negative scrub position, clamps at minus five seconds, and sends the
   expect(sent.at(-1)).toBe("end");
   deliver(tickAt(-5, 4, false));
   expect(deck.positionRef.current).toBe(-5);
+});
+
+it("lands a drag where the snap puts it, and sends that landing", async () => {
+  deliver(tickAt(10, 2, true));
+  act(() => { deck.scrubBegin(); deck.scrubTo(20); });
+  let given: number | null = null;
+  act(() => deck.scrubEnd((at) => { given = at; return at + 0.25; }));
+  await settle();
+  expect(given).toBe(20);
+  expect(deck.positionRef.current).toBe(20.25);
+  expect(sent).toContain("to:20250");
+  expect(sent).not.toContain("to:20000");
+  expect(sent.at(-1)).toBe("end");
 });

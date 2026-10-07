@@ -397,7 +397,7 @@
   "Selected: 1 Track": "Selecionado: 1 faixa",
   "rbxport": "rbxport",
   "Dual control": "Controle duplo",
-  "Link the waveform controls and beat jump across both decks.": "Vincule os controles de forma de onda e salte a batida em ambos os decks.",
+  "Link the beat jump across both decks.": "Vincular o beat jump nos dois decks.",
   "b": "b",
   "--tree-w": "--árvore-w",
   "Resize the library tree": "Redimensionar a árvore da biblioteca",
@@ -1433,5 +1433,11 @@
   "The two existing device libraries disagree. Reconcile them in rekordbox before their first sync here.": "As duas bibliotecas de dispositivos existentes discordam. Reconcilie-os no rekordbox antes da primeira sincronização aqui.",
   "This USB belongs to a different or older unverified master library. Import its contents in rekordbox before changing its ownership.": "Este USB pertence a uma biblioteca mestre não verificada diferente ou mais antiga. Importe o seu conteúdo para o rekordbox antes de alterar a sua propriedade.",
   "OneLibrary contains cue records that this export would replace. Import the cues in rekordbox first.": "OneLibrary contém registros de sinalização que esta exportação substituiria. Importe primeiro os cues no rekordbox.",
-  "A track being removed is still referenced by USB history. Import and clear that history in rekordbox first.": "Uma faixa que está sendo removida ainda é referenciada pelo histórico do USB. Importe e limpe primeiro esse histórico no rekordbox."
+  "A track being removed is still referenced by USB history. Import and clear that history in rekordbox first.": "Uma faixa que está sendo removida ainda é referenciada pelo histórico do USB. Importe e limpe primeiro esse histórico no rekordbox.",
+  "Click to preview from here": "Clique para pré-ouvir a partir daqui",
+  "Mute the players": "Silenciar os players",
+  "Stop the players": "Parar os players",
+  "While a preview plays": "Durante uma pré-escuta",
+  "Stop preview": "Parar a pré-escuta",
+  "Stop preview (Esc)": "Parar a pré-escuta (Esc)"
 }

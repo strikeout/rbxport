@@ -377,7 +377,7 @@
   "Selected: 1 Track": "已選擇： 1 首曲目",
   "rbxport": "RBX連接埠",
   "Dual control": "雙控",
-  "Link the waveform controls and beat jump across both decks.": "連結兩個面板上的波形控制和節拍跳躍。",
+  "Link the beat jump across both decks.": "連結兩個播放器的節拍跳躍。",
   "b": "乙",
   "--tree-w": "--樹-w",
   "Resize the library tree": "調整庫樹的大小",
@@ -1434,5 +1434,11 @@
   "The two existing device libraries disagree. Reconcile them in rekordbox before their first sync here.": "现有的两个设备库不一致。在首次同步之前在 rekordbox 中對它們進行協調。",
   "This USB belongs to a different or older unverified master library. Import its contents in rekordbox before changing its ownership.": "此 USB 屬於不同的或較舊的未經驗證的主庫。在更改其所有權之前，將其內容匯入 rekordbox。",
   "OneLibrary contains cue records that this export would replace. Import the cues in rekordbox first.": "OneLibrary 包含此匯出將取代的提示記錄。首先导入 rekordbox 中的提示。",
-  "A track being removed is still referenced by USB history. Import and clear that history in rekordbox first.": "USB 歷史記錄仍會引用已刪除的曲目。首先匯入並清除 rekordbox 中的歷史記錄。"
+  "A track being removed is still referenced by USB history. Import and clear that history in rekordbox first.": "USB 歷史記錄仍會引用已刪除的曲目。首先匯入並清除 rekordbox 中的歷史記錄。",
+  "Click to preview from here": "點擊從此處試聽",
+  "Mute the players": "將播放器靜音",
+  "Stop the players": "停止播放器",
+  "While a preview plays": "試聽播放時",
+  "Stop preview": "停止試聽",
+  "Stop preview (Esc)": "停止試聽 (Esc)"
 }

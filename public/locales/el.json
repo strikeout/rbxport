@@ -370,7 +370,7 @@
   "Selected: 1 Track": "Επιλεγμένο: 1 Κομμάτι",
   "rbxport": "rbxport",
   "Dual control": "Διπλός έλεγχος",
-  "Link the waveform controls and beat jump across both decks.": "Συνδέστε τα χειριστήρια κυματομορφής και άλμα ρυθμού και στα δύο καταστρώματα.",
+  "Link the beat jump across both decks.": "Σύνδεση του beat jump και στα δύο decks.",
   "b": "β",
   "--tree-w": "--δέντρο-β",
   "Resize the library tree": "Αλλαγή μεγέθους του δέντρου της βιβλιοθήκης",
@@ -1431,5 +1431,11 @@
   "The two existing device libraries disagree. Reconcile them in rekordbox before their first sync here.": "Οι δύο υπάρχουσες βιβλιοθήκες συσκευών διαφωνούν. Συμφιλιώστε τα στο rekordbox πριν από τον πρώτο συγχρονισμό τους εδώ.",
   "This USB belongs to a different or older unverified master library. Import its contents in rekordbox before changing its ownership.": "Αυτό το USB ανήκει σε διαφορετική ή παλαιότερη μη επαληθευμένη κύρια βιβλιοθήκη. Εισαγάγετε τα περιεχόμενά του στο rekordbox πριν αλλάξετε την ιδιοκτησία του.",
   "OneLibrary contains cue records that this export would replace. Import the cues in rekordbox first.": "Η OneLibrary περιέχει εγγραφές υπόδειξης που θα αντικαταστήσει αυτή η εξαγωγή. Εισαγάγετε πρώτα τα συνθήματα στο rekordbox.",
-  "A track being removed is still referenced by USB history. Import and clear that history in rekordbox first.": "Ένα κομμάτι που αφαιρείται εξακολουθεί να αναφέρεται από το ιστορικό USB. Εισαγάγετε και διαγράψτε πρώτα αυτό το ιστορικό στο rekordbox."
+  "A track being removed is still referenced by USB history. Import and clear that history in rekordbox first.": "Ένα κομμάτι που αφαιρείται εξακολουθεί να αναφέρεται από το ιστορικό USB. Εισαγάγετε και διαγράψτε πρώτα αυτό το ιστορικό στο rekordbox.",
+  "Click to preview from here": "Κάντε κλικ για προακρόαση από εδώ",
+  "Mute the players": "Σίγαση των players",
+  "Stop the players": "Διακοπή των players",
+  "While a preview plays": "Κατά την προακρόαση",
+  "Stop preview": "Διακοπή προακρόασης",
+  "Stop preview (Esc)": "Διακοπή προακρόασης (Esc)"
 }

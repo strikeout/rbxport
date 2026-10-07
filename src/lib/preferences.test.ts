@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  browseRowHeight,
   browseScale,
+  browseVars,
   BROWSE_SCALE_DEFAULT,
   DEFAULT_PREFERENCES,
   formatKey,
@@ -34,6 +36,11 @@ describe("sanitisePreferences", () => {
   it("keeps the LINK key-sort choice and defaults invalid or older settings to musical", () => {
     expect(sanitisePreferences({djSystem: {linkKeySort: "alphabetical"}}).djSystem.linkKeySort).toBe("alphabetical");
     expect(sanitisePreferences({djSystem: {linkKeySort: "invalid"}}).djSystem.linkKeySort).toBe("musical");
+  });
+  it("mutes the players during a preview unless stop is chosen", () => {
+    expect(sanitisePreferences({}).audio.previewMainPlayers).toBe("mute");
+    expect(sanitisePreferences({ audio: { previewMainPlayers: "stop" } }).audio.previewMainPlayers).toBe("stop");
+    expect(sanitisePreferences({ audio: { previewMainPlayers: "pause" } }).audio.previewMainPlayers).toBe("mute");
   });
   it("leaves automatic LINK joining off unless it is explicitly enabled", () => {
     expect(DEFAULT_PREFERENCES.djSystem.autoJoinLink).toBe(false);
@@ -141,6 +148,16 @@ describe("the sliders and the quantize value", () => {
     expect(browseScale(0)).toBeLessThan(1);
     expect(browseScale(4)).toBeGreaterThan(1);
     expect(browseScale(99)).toBe(1);
+  });
+
+  it("give the track list and the playlist tree the same row and type", () => {
+    const view = { browseFontSize: 4, browseBold: true, browseLineSpace: 0 };
+    expect(browseRowHeight(view)).toBe(20);
+    expect(browseVars(view)).toEqual({
+      "--s-row-height": "20px",
+      "--f-size-ui": "calc(1.3 * var(--f-size-ui-base))",
+      "--browse-weight": 700,
+    });
   });
 
   it("turn a beat value into a fraction of a beat", () => {

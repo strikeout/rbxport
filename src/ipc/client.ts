@@ -307,9 +307,11 @@ async function realBackend(): Promise<Backend> {
     deckLoad: (deck, trackId, loadId) => invoke<void>("deck_load", { deck, track: trackId, loadId }),
     deckUnload: (deck) => invoke<void>("deck_unload", { deck }),
     deckPlay: (deck) => invoke<void>("deck_play", { deck }),
-    deckPlayAfter: (deck, delayMs) => invoke<void>("deck_play_after", { deck, delayMs }),
+    deckPlayAfter: (deck, delayMs, positionMs) =>
+      invoke<void>("deck_play_after", { deck, delayMs, positionMs: positionMs ?? null }),
     deckPause: (deck) => invoke<void>("deck_pause", { deck }),
     deckSeek: (deck, positionMs) => invoke<void>("deck_seek", { deck, positionMs }),
+    deckMove: (deck, byMs) => invoke<void>("deck_move", { deck, byMs }),
     deckSetLoop: (deck, inMs, outMs) => invoke<void>("deck_set_loop", { deck, inMs, outMs }),
     deckLoopActive: (deck, on) => invoke<void>("deck_loop_active", { deck, on }),
     deckClearLoop: (deck) => invoke<void>("deck_clear_loop", { deck }),
@@ -329,6 +331,7 @@ async function realBackend(): Promise<Backend> {
     deckTempo: (deck, tempo) => invoke<void>("deck_tempo", { deck, tempo }),
     deckMasterTempo: (deck, on) => invoke<void>("deck_master_tempo", { deck, on }),
     deckMetronome: (deck, on) => invoke<void>("deck_metronome", { deck, on }),
+    setMetronomeGrid: (deck, beats) => invoke<void>("deck_metronome_grid", { deck, beats }),
     deckKeyShift: (deck, semitones) => invoke<void>("deck_key_shift", { deck, semitones }),
     setMetronome: (sound, volume) => invoke<void>("set_metronome", { sound, volume }),
     setAudioConfig: (sampleRate, bufferFrames) =>
@@ -338,6 +341,7 @@ async function realBackend(): Promise<Backend> {
     setChannelKill: (deck, band, killed) =>
       invoke<void>("set_channel_kill", { deck, band, killed }),
     setChannelTrim: (deck, trim) => invoke<void>("set_channel_trim", { deck, trim }),
+    setChannelMuted: (deck, muted) => invoke<void>("set_channel_muted", { deck, muted }),
     setCrossfade: (position) => invoke<void>("set_crossfade", { position }),
     setEqCurve: (isolator) => invoke<void>("set_eq_curve", { isolator }),
     appDiagnostics: () => invoke<Diagnostics>("app_diagnostics"),

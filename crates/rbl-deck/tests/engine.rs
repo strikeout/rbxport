@@ -230,6 +230,7 @@ impl Harness {
         match deck {
             Deck::A => self.engine.snapshot().a.position_frames,
             Deck::B => self.engine.snapshot().b.position_frames,
+            Deck::P => self.engine.snapshot().p.position_frames,
         }
     }
 
@@ -370,6 +371,78 @@ fn a_start_held_for_the_beat_is_silent_for_exactly_that_long_and_then_sounds() {
     h.engine.play_after(Deck::A, 100_000);
     h.engine.pause(Deck::A);
     assert_eq!(h.engine.snapshot().a.start_in_frames, 0);
+}
+
+#[test]
+fn a_held_start_survives_only_a_seek_sent_before_it() {
+    // `deck_play_after` seeks and then holds the start in one command. A seek
+    // clears a pending wait, so the opposite order starts the deck at once.
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("ramp.wav");
+    ramp(&path, RATE as usize);
+
+    let h = harness();
+    h.engine.load(Deck::A, &path);
+    h.wait_for_load(1);
+
+    h.engine.seek_ms(Deck::A, 20.0);
+    h.engine.play_after(Deck::A, 1_300);
+    assert_eq!(h.engine.snapshot().a.start_in_frames, 1_300);
+
+    h.engine.pause(Deck::A);
+    h.engine.play_after(Deck::A, 1_300);
+    h.engine.seek_ms(Deck::A, 20.0);
+    assert_eq!(h.engine.snapshot().a.start_in_frames, 0, "a late seek cancels the wait");
+}
+
+#[test]
+fn the_preview_voice_plays_into_the_output() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("flat.wav");
+    flat(&path, RATE as usize);
+
+    let h = harness();
+    h.engine.load(Deck::P, &path);
+    h.wait_for_load(1);
+    h.engine.play(Deck::P);
+    assert!(h.engine.snapshot().p.playing);
+    assert!(h.sink.running(), "the preview must start the device");
+
+    let audio = h.play_until(Deck::P, 8_192);
+    let peak = audio.iter().fold(0.0_f32, |a, s| a.max(s.abs()));
+    assert!(peak > FLAT * 0.9, "peak was {peak}");
+    assert_eq!(h.position(Deck::A), 0, "deck A moved with the preview");
+}
+
+#[test]
+fn a_muted_deck_keeps_playing_in_silence_and_comes_back() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("flat.wav");
+    flat(&path, RATE as usize * 2);
+
+    let h = harness();
+    h.engine.load(Deck::A, &path);
+    h.wait_for_load(1);
+    h.engine.play(Deck::A);
+    h.play_until(Deck::A, 4_096);
+
+    let channel = h.engine.mixer().channels.first().unwrap();
+    channel.set_muted(true);
+    // The fader smoothing takes the deck down over a few milliseconds.
+    h.play_until(Deck::A, 12_288);
+    let at = h.position(Deck::A);
+    let quiet = h.play_until(Deck::A, at + 4_096);
+    assert!(quiet.iter().all(|s| s.abs() < INAUDIBLE), "a muted deck was heard");
+    assert!(h.position(Deck::A) > at, "a muted deck stopped");
+    assert!(worst_step(&quiet) < step_limit());
+
+    channel.set_muted(false);
+    let at = h.position(Deck::A);
+    h.play_until(Deck::A, at + 8_192);
+    let at = h.position(Deck::A);
+    let back = h.play_until(Deck::A, at + 4_096);
+    let peak = back.iter().fold(0.0_f32, |a, s| a.max(s.abs()));
+    assert!(peak > FLAT * 0.9, "peak was {peak}");
 }
 
 #[test]

@@ -392,7 +392,7 @@
   "Selected: 1 Track": "Seleccionado: 1 pista",
   "rbxport": "rbxport",
   "Dual control": "doble control",
-  "Link the waveform controls and beat jump across both decks.": "Vincula los controles de forma de onda y salta a través de ambos decks.",
+  "Link the beat jump across both decks.": "Vincular el beat jump en ambos decks.",
   "b": "segundo",
   "--tree-w": "--árbol-w",
   "Resize the library tree": "Cambiar el tamaño del árbol de la biblioteca",
@@ -1432,5 +1432,11 @@
   "The two existing device libraries disagree. Reconcile them in rekordbox before their first sync here.": "Las dos bibliotecas de dispositivos existentes no están de acuerdo. Concílialos en rekordbox antes de su primera sincronización aquí.",
   "This USB belongs to a different or older unverified master library. Import its contents in rekordbox before changing its ownership.": "Este USB pertenece a una biblioteca maestra no verificada diferente o anterior. Importe su contenido en rekordbox antes de cambiar su propietario.",
   "OneLibrary contains cue records that this export would replace. Import the cues in rekordbox first.": "OneLibrary contiene registros de referencia que esta exportación reemplazaría. Primero importe las señales en rekordbox.",
-  "A track being removed is still referenced by USB history. Import and clear that history in rekordbox first.": "El historial de USB aún hace referencia a una pista que se está eliminando. Primero importe y borre ese historial en rekordbox."
+  "A track being removed is still referenced by USB history. Import and clear that history in rekordbox first.": "El historial de USB aún hace referencia a una pista que se está eliminando. Primero importe y borre ese historial en rekordbox.",
+  "Click to preview from here": "Haz clic para preescuchar desde aquí",
+  "Mute the players": "Silenciar los reproductores",
+  "Stop the players": "Detener los reproductores",
+  "While a preview plays": "Mientras suena una preescucha",
+  "Stop preview": "Detener la preescucha",
+  "Stop preview (Esc)": "Detener la preescucha (Esc)"
 }

@@ -364,7 +364,7 @@
   "Selected: 1 Track": "Ausgewählt: 1 Titel",
   "rbxport": "rbxport",
   "Dual control": "Doppelte Kontrolle",
-  "Link the waveform controls and beat jump across both decks.": "Verknüpfen Sie die Wellenform-Steuerelemente und schlagen Sie Sprünge über beide Decks hinweg.",
+  "Link the beat jump across both decks.": "Beat Jump auf beiden Decks verknüpfen.",
   "b": "b",
   "--tree-w": "--tree-w",
   "Resize the library tree": "Ändern Sie die Größe des Bibliotheksbaums",
@@ -1426,5 +1426,11 @@
   "The two existing device libraries disagree. Reconcile them in rekordbox before their first sync here.": "Die beiden vorhandenen Gerätebibliotheken sind anderer Meinung. Hier können Sie sie vor der ersten Synchronisierung in rekordbox abgleichen.",
   "This USB belongs to a different or older unverified master library. Import its contents in rekordbox before changing its ownership.": "Dieser USB-Stick gehört zu einer anderen oder älteren, nicht verifizierten Master-Bibliothek. Importieren Sie den Inhalt in rekordbox, bevor Sie den Besitzer ändern.",
   "OneLibrary contains cue records that this export would replace. Import the cues in rekordbox first.": "OneLibrary enthält Cue-Datensätze, die dieser Export ersetzen würde. Importieren Sie zuerst die Cues in rekordbox.",
-  "A track being removed is still referenced by USB history. Import and clear that history in rekordbox first.": "Auf einen Titel, der entfernt wird, wird weiterhin im USB-Verlauf verwiesen. Importieren und löschen Sie diesen Verlauf zunächst in rekordbox."
+  "A track being removed is still referenced by USB history. Import and clear that history in rekordbox first.": "Auf einen Titel, der entfernt wird, wird weiterhin im USB-Verlauf verwiesen. Importieren und löschen Sie diesen Verlauf zunächst in rekordbox.",
+  "Click to preview from here": "Klicken, um ab hier vorzuhören",
+  "Mute the players": "Player stummschalten",
+  "Stop the players": "Player stoppen",
+  "While a preview plays": "Während eine Vorschau spielt",
+  "Stop preview": "Vorhören stoppen",
+  "Stop preview (Esc)": "Vorhören stoppen (Esc)"
 }

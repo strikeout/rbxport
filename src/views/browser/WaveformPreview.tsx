@@ -12,6 +12,8 @@ import {
   drawPreviewMemoryCues, drawPreviewCues, renderPreview, waveformKindOf, WaveformCache, type RenderedWaveform, type WavePalette,
 } from "@/canvas";
 import { usePreferences } from "@/store/usePreferences";
+import { usePreview } from "@/store/usePreview";
+import styles from "./WaveformPreview.module.css";
 
 /** Shared across every row: bounded, and released when entries fall out. */
 const cache = new WaveformCache(500);
@@ -145,7 +147,7 @@ export const WaveformPreview = memo(function WaveformPreview({
   const ref = useRef<HTMLCanvasElement>(null);
   // View › Color › Waveform color: the row follows the deck's palette, and a
   // bitmap rendered in one palette is not the row in another.
-  const { waveformColor: palette, hotCueColor } = usePreferences().view;
+  const { waveformColor: palette, hotCueColor, tooltips } = usePreferences().view;
 
   useEffect(() => {
     let cancelled = false;
@@ -185,14 +187,61 @@ export const WaveformPreview = memo(function WaveformPreview({
     };
   }, [trackId, width, height, hotCues, memoryCues, durationSec, palette, hotCueColor, startupCache]);
 
+  // A click plays the track from that place on the preview voice. The row
+  // must not see the press: it would select the track, and a second click
+  // would load it onto a deck.
+  const preview = usePreview();
+  const { subscribe } = preview;
+  const previewing = preview.active && preview.trackId === trackId;
+  const head = useRef<HTMLSpanElement>(null);
+  useEffect(() => {
+    if (!previewing || durationSec <= 0) return;
+    return subscribe((seconds) => {
+      const x = Math.min(Math.max(seconds / durationSec, 0), 1) * width;
+      if (head.current) head.current.style.transform = `translateX(${x}px)`;
+    });
+  }, [previewing, subscribe, durationSec, width]);
+
   const dpr = typeof window === "undefined" ? 1 : window.devicePixelRatio || 1;
   return (
-    <canvas
-      ref={ref}
-      width={Math.round(width * dpr)}
-      height={Math.round(height * dpr)}
+    <span
+      className={styles.preview}
       style={{ width: `${width}px`, height: `${height}px` }}
-      aria-hidden
-    />
+      title={tooltips ? "Click to preview from here" : undefined}
+      onMouseDown={(event) => {
+        if (event.button !== 0 || durationSec <= 0) return;
+        event.stopPropagation();
+        const x = event.clientX - event.currentTarget.getBoundingClientRect().left;
+        preview.play(trackId, Math.min(Math.max(x / width, 0), 1) * durationSec);
+      }}
+      onClick={(event) => event.stopPropagation()}
+      onDoubleClick={(event) => event.stopPropagation()}
+    >
+      <canvas
+        ref={ref}
+        width={Math.round(width * dpr)}
+        height={Math.round(height * dpr)}
+        style={{ width: `${width}px`, height: `${height}px` }}
+        aria-hidden
+      />
+      {previewing ? (
+        <>
+          <span ref={head} className={styles.head} aria-hidden />
+          {/* Over the left end of the waveform rather than beside it: a
+              narrower canvas would render the row's waveform again. */}
+          <button
+            type="button"
+            className={styles.stop}
+            aria-label="Stop preview"
+            title={tooltips ? "Stop preview (Esc)" : undefined}
+            onMouseDown={(event) => event.stopPropagation()}
+            onClick={(event) => {
+              event.stopPropagation();
+              preview.stop();
+            }}
+          />
+        </>
+      ) : null}
+    </span>
   );
 });
