@@ -43,6 +43,10 @@ function tickAt(seconds: number, generation: number, playing = true, tempo = 1):
       frames: 0, totalFrames: 0, generation: 0, playing: false, loaded: false,
       tempo: 1, masterTempo: false, keyShift: 0, startInFrames: 0, loopInFrames: 0, loopOutFrames: 0, looping: false,
     },
+    p: {
+      frames: 0, totalFrames: 0, generation: 0, playing: false, loaded: false,
+      tempo: 1, masterTempo: false, keyShift: 0, startInFrames: 0, loopInFrames: 0, loopOutFrames: 0, looping: false,
+    },
     sampleRate: RATE,
     peakLeft: 0,
     peakRight: 0,

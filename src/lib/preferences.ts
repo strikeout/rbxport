@@ -10,6 +10,7 @@
  * the same way: a hand-edited value, a value from a build that spelt a choice
  * differently, or nothing at all must each come back as a working set.
  */
+import type { CSSProperties } from "react";
 import { ANALYSIS_SLOTS, SLOTS } from "./queue";
 import type { KeyChord } from "./shortcuts";
 import { toCamelot, type TrafficLightReach } from "./camelot";
@@ -41,6 +42,12 @@ export const BUFFER_SIZES: readonly number[] = [64, 128, 256, 512, 1024, 2048];
 export type MetronomeSound = 1 | 2 | 3;
 export type MetronomeVolume = "small" | "middle" | "large";
 
+/**
+ * What the decks do while a track plays from a click on its preview waveform
+ * in the browser: they play on unheard, or they pause until the preview ends.
+ */
+export type PreviewMainPlayers = "mute" | "stop";
+
 /** The fraction of a beat the quantized cue snaps to. */
 export type QuantizeBeat = "1/1" | "1/2" | "1/4" | "1/8";
 
@@ -68,6 +75,29 @@ export const BROWSE_SCALE_DEFAULT = 2;
 
 export function browseScale(step: number): number {
   return BROWSE_SCALES[step] ?? 1;
+}
+
+/** The measured browse row height, in pixels: `--s-row-height`. */
+export const BROWSE_ROW_H = 25;
+
+/** The row height in pixels for the Line Space slider. */
+export function browseRowHeight(view: Pick<ViewPreferences, "browseLineSpace">): number {
+  return Math.round(BROWSE_ROW_H * browseScale(view.browseLineSpace));
+}
+
+/**
+ * Browse › FontSize, Bold and Line Space, as the CSS variables a browse list
+ * reads. The track list and the playlist tree set them on their own elements:
+ * on the root, they would also scale the rest of the interface.
+ */
+export function browseVars(
+  view: Pick<ViewPreferences, "browseFontSize" | "browseBold" | "browseLineSpace">,
+): CSSProperties {
+  return {
+    ["--s-row-height" as string]: `${browseRowHeight(view)}px`,
+    ["--f-size-ui" as string]: `calc(${browseScale(view.browseFontSize)} * var(--f-size-ui-base))`,
+    ["--browse-weight" as string]: view.browseBold ? 700 : 400,
+  };
 }
 
 export type VuMeterMode = "normal" | "fabulous";
@@ -144,6 +174,7 @@ export interface AudioPreferences {
   bufferSize: number;
   metronomeSound: MetronomeSound;
   metronomeVolume: MetronomeVolume;
+  previewMainPlayers: PreviewMainPlayers;
 }
 
 export type AnalysisMode = "rekordbox" | "rbxport";
@@ -270,6 +301,7 @@ export const DEFAULT_PREFERENCES: Preferences = {
     bufferSize: 512,
     metronomeSound: 2,
     metronomeVolume: "large",
+    previewMainPlayers: "mute",
   },
   analysis: {
     mode: "rbxport",
@@ -372,6 +404,7 @@ const HOT_CUE_COLORS: readonly HotCueColor[] = ["colorful", "cdj"];
 const BEAT_COUNTS: readonly BeatCount[] = ["position", "toMemoryBars", "toMemoryBeats"];
 const METRONOME_SOUNDS: readonly MetronomeSound[] = [1, 2, 3];
 const METRONOME_VOLUMES: readonly MetronomeVolume[] = ["small", "middle", "large"];
+const PREVIEW_MAIN_PLAYERS: readonly PreviewMainPlayers[] = ["mute", "stop"];
 
 function oneOfNumber<T extends number>(value: unknown, choices: readonly T[], fallback: T): T {
   return choices.includes(value as T) ? (value as T) : fallback;
@@ -437,6 +470,7 @@ export function sanitisePreferences(value: unknown): Preferences {
       bufferSize: oneOfNumber(audio.bufferSize, BUFFER_SIZES, d.audio.bufferSize),
       metronomeSound: oneOfNumber(audio.metronomeSound, METRONOME_SOUNDS, d.audio.metronomeSound),
       metronomeVolume: oneOf(audio.metronomeVolume, METRONOME_VOLUMES, d.audio.metronomeVolume),
+      previewMainPlayers: oneOf(audio.previewMainPlayers, PREVIEW_MAIN_PLAYERS, d.audio.previewMainPlayers),
     },
     analysis: {
       mode: oneOf(analysis.mode, ["rekordbox", "rbxport"], d.analysis.mode),

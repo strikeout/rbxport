@@ -307,7 +307,8 @@ async function realBackend(): Promise<Backend> {
     deckLoad: (deck, trackId, loadId) => invoke<void>("deck_load", { deck, track: trackId, loadId }),
     deckUnload: (deck) => invoke<void>("deck_unload", { deck }),
     deckPlay: (deck) => invoke<void>("deck_play", { deck }),
-    deckPlayAfter: (deck, delayMs) => invoke<void>("deck_play_after", { deck, delayMs }),
+    deckPlayAfter: (deck, delayMs, positionMs) =>
+      invoke<void>("deck_play_after", { deck, delayMs, positionMs: positionMs ?? null }),
     deckPause: (deck) => invoke<void>("deck_pause", { deck }),
     deckSeek: (deck, positionMs) => invoke<void>("deck_seek", { deck, positionMs }),
     deckSetLoop: (deck, inMs, outMs) => invoke<void>("deck_set_loop", { deck, inMs, outMs }),
@@ -338,6 +339,7 @@ async function realBackend(): Promise<Backend> {
     setChannelKill: (deck, band, killed) =>
       invoke<void>("set_channel_kill", { deck, band, killed }),
     setChannelTrim: (deck, trim) => invoke<void>("set_channel_trim", { deck, trim }),
+    setChannelMuted: (deck, muted) => invoke<void>("set_channel_muted", { deck, muted }),
     setCrossfade: (position) => invoke<void>("set_crossfade", { position }),
     setEqCurve: (isolator) => invoke<void>("set_eq_curve", { isolator }),
     appDiagnostics: () => invoke<Diagnostics>("app_diagnostics"),

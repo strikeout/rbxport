@@ -368,7 +368,7 @@
   "Selected: 1 Track": "Выбрано: 1 трек",
   "rbxport": "rbxport",
   "Dual control": "Двойное управление",
-  "Link the waveform controls and beat jump across both decks.": "Соедините элементы управления формой волны и прыгайте по обеим декам.",
+  "Link the beat jump across both decks.": "Связать прыжок по долям на обеих деках.",
   "b": "б",
   "--tree-w": "--tree-w",
   "Resize the library tree": "Изменение размера дерева библиотеки",
@@ -1388,5 +1388,9 @@
   "A track being removed is still referenced by USB history. Import and clear that history in rekordbox first.": "Удаляемая дорожка по-прежнему упоминается в истории USB. Сначала импортируйте и очистите эту историю в rekordbox.",
   "Pioneer DJ recommends FAT32": "Pioneer DJ recommends FAT32",
   "Unlock anyway": "Unlock anyway",
-  "It looks like you haven’t made a backup yet. We strongly recommend creating one before using RBXport.": "It looks like you haven’t made a backup yet. We strongly recommend creating one before using RBXport."
+  "It looks like you haven’t made a backup yet. We strongly recommend creating one before using RBXport.": "It looks like you haven’t made a backup yet. We strongly recommend creating one before using RBXport.",
+  "Click to preview from here": "Нажмите, чтобы прослушать отсюда",
+  "Mute the players": "Заглушить плееры",
+  "Stop the players": "Остановить плееры",
+  "While a preview plays": "Во время предпрослушивания"
 }

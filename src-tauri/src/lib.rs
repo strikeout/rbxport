@@ -536,6 +536,7 @@ pub fn run() {
             commands::set_channel_band,
             commands::set_channel_kill,
             commands::set_channel_trim,
+            commands::set_channel_muted,
             commands::set_crossfade,
             commands::set_eq_curve,
             commands::deck_state,

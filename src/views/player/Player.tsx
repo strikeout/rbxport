@@ -1272,8 +1272,9 @@ export const Player = memo(function Player({
         const wait = leader.playing ? beatWait(leader) : null;
         if (wait !== null && grid.times.length > 0) {
           const onBeat = nearestBeatMs(grid, follower.position * 1000) / 1000;
-          if (Math.abs(onBeat - follower.position) > 0.001) playback.seek(onBeat);
-          playback.playAfter(wait * 1000);
+          // The move and the held start go as one command: see `playAfter`.
+          const moved = Math.abs(onBeat - follower.position) > 0.001;
+          playback.playAfter(wait * 1000, moved ? onBeat : undefined);
           return;
         }
         const nudge = beatNudgeFor(leader, follower);

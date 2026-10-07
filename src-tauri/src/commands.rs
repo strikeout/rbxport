@@ -1938,12 +1938,17 @@ pub async fn deck_play<R: tauri::Runtime>(
 
 /// Starts a deck after `delay_ms` of silence, counted by the audio callback:
 /// quantized play on a synced deck, held for the master's next beat.
+///
+/// `position_ms` moves the playhead first, in this command. A seek clears a
+/// pending wait, and two separate commands can arrive in either order, so a
+/// separate seek that arrives late starts the deck at once and off the beat.
 #[tauri::command]
 pub async fn deck_play_after<R: tauri::Runtime>(
     app: tauri::AppHandle<R>,
     player: State<'_, Arc<crate::player::Player>>,
     deck: String,
     delay_ms: f64,
+    position_ms: Option<f64>,
 ) -> AppResult<()> {
     let engine = player.engine(&app)?;
     // Clamped to a positive number first: a delay is at most a beat, and a
@@ -1954,7 +1959,11 @@ pub async fn deck_play_after<R: tauri::Runtime>(
     } else {
         0
     };
-    engine.play_after(crate::player::deck_of(&deck), frames);
+    let deck = crate::player::deck_of(&deck);
+    if let Some(ms) = position_ms.filter(|ms| ms.is_finite()) {
+        engine.seek_ms(deck, ms);
+    }
+    engine.play_after(deck, frames);
     crate::player::start_ticker(&app);
     Ok(())
 }
@@ -2083,6 +2092,24 @@ pub async fn set_channel_kill<R: tauri::Runtime>(
     let engine = player.engine(&app)?;
     if let Some(channel) = engine.mixer().channels.get(channel_of(&deck)) {
         channel.set_kill(band_of(&band), killed);
+    }
+    Ok(())
+}
+
+/// Silences a deck in the sum, or brings it back, without a change to its
+/// transport: a browser preview in "mute" mode lets the decks run on unheard.
+#[tauri::command]
+pub async fn set_channel_muted(
+    player: State<'_, Arc<crate::player::Player>>,
+    deck: String,
+    muted: bool,
+) -> AppResult<()> {
+    // An engine that is not open has nothing muted, and opening one here
+    // would start the audio device at launch.
+    if let Some(engine) = player.opened() {
+        if let Some(channel) = engine.mixer().channels.get(channel_of(&deck)) {
+            channel.set_muted(muted);
+        }
     }
     Ok(())
 }

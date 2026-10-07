@@ -357,7 +357,7 @@
   "Selected: 1 Track": "Seçilen: 1 Parça",
   "rbxport": "rbxport",
   "Dual control": "Çift kontrol",
-  "Link the waveform controls and beat jump across both decks.": "Dalga formu kontrollerini bağlayın ve her iki deckte de atlamayı tamamlayın.",
+  "Link the beat jump across both decks.": "Her iki decks için beat jump'ı bağla.",
   "b": "b",
   "--tree-w": "--ağaç-w",
   "Resize the library tree": "Kütüphane ağacını yeniden boyutlandırın",
@@ -1384,5 +1384,9 @@
   "A track being removed is still referenced by USB history. Import and clear that history in rekordbox first.": "Kaldırılan bir parçaya USB geçmişi tarafından hâlâ başvurulmaktadır. Öncelikle bu geçmişi rekordbox'a aktarın ve temizleyin.",
   "Pioneer DJ recommends FAT32": "Pioneer DJ recommends FAT32",
   "Unlock anyway": "Unlock anyway",
-  "It looks like you haven’t made a backup yet. We strongly recommend creating one before using RBXport.": "It looks like you haven’t made a backup yet. We strongly recommend creating one before using RBXport."
+  "It looks like you haven’t made a backup yet. We strongly recommend creating one before using RBXport.": "It looks like you haven’t made a backup yet. We strongly recommend creating one before using RBXport.",
+  "Click to preview from here": "Buradan ön dinleme için tıklayın",
+  "Mute the players": "Çalarların sesini kapat",
+  "Stop the players": "Çalarları durdur",
+  "While a preview plays": "Ön dinleme sırasında"
 }

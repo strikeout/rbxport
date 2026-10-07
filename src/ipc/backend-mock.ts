@@ -1444,6 +1444,10 @@ export function createMockBackend(options: MockOptions = {}): Backend {
   const tick = (): Tick => ({
     a: { ...deckA },
     b: { ...deckB },
+    // ponytail: the mock never loads the preview voice, so a preview in a
+    // browser stays silent and still. Give it its own counted deck if an
+    // end-to-end test has to drive one.
+    p: { ...deckB },
     sampleRate: SAMPLE_RATE,
     // A browser has no audio callback, so there is nothing to meter. Zero is
     // the truth here rather than a placeholder: nothing is coming out.
@@ -2028,8 +2032,12 @@ export function createMockBackend(options: MockOptions = {}): Backend {
     // The wait is a timer here rather than counted in output frames: a
     // browser has no callback to count them in, and the timing is only
     // ever judged by ear against a real device.
-    deckPlayAfter: (_deck, delayMs) => {
+    deckPlayAfter: (_deck, delayMs, positionMs) => {
       if (!deckA.loaded) return wait(undefined);
+      if (positionMs !== undefined) {
+        deckA.frames = Math.max(-5 * SAMPLE_RATE, Math.round((positionMs / 1000) * SAMPLE_RATE));
+        deckA.generation += 1;
+      }
       deckA.playing = true;
       setTimeout(startClock, Math.max(0, delayMs));
       return wait(undefined);
@@ -2200,6 +2208,7 @@ export function createMockBackend(options: MockOptions = {}): Backend {
     setChannelBand: () => wait(undefined),
     setChannelKill: () => wait(undefined),
     setChannelTrim: () => wait(undefined),
+    setChannelMuted: () => wait(undefined),
     setCrossfade: () => wait(undefined),
     setEqCurve: () => wait(undefined),
     deckScrubEnd: () => {

@@ -8,12 +8,21 @@ the version numbers [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Fixed
+- A deck with BEAT SYNC and Q on now starts on the master's beat every time.
+  Before, some presses of PLAY started the deck at once, off the beat.
+- The playlist tree now uses the Browse font size, bold and line space. The
+  track list uses the same settings from Preferences › View.
 - Connecting a USB only refreshes the device list. Automatic history and
   settings imports now wait until SYNC is clicked in Sync Manager, before
   exporting to the selected devices. Device discovery no longer runs export
   recovery.
 
 ### Added
+- Click a preview waveform in the track list to play that track from the
+  clicked position. A line shows the playhead. Press Escape to stop the
+  preview. The preview also stops at the end of the track. Preferences ›
+  Audio › Preview sets what the decks do during a preview. They mute and
+  continue to play, or they stop and start again after the preview.
 - Right-clicking the rbxport version in the status bar opens the current log
   in the operating system's default log viewer.
 - On a computer with no rekordbox library, the app asks whether to create a
@@ -25,6 +34,8 @@ the version numbers [Semantic Versioning](https://semver.org/).
   before restoring, so the right backup is easy to pick.
 
 ### Changed
+- In the two-player layout, the two waveforms always zoom together. DUAL
+  CONTROL now links only the beat jump.
 - Restoring a backup moved to the separate RBXport Restore app, which can put
   back the whole backup or only some of it. Preferences › Backups creates and
   deletes backups, and says where to restore them.

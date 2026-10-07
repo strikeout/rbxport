@@ -66,6 +66,8 @@ pub struct DeckTickDto {
 pub struct TickDto {
     pub a: DeckTickDto,
     pub b: DeckTickDto,
+    /// The browser's preview voice.
+    pub p: DeckTickDto,
     pub sample_rate: u32,
     /// The loudest sample the device was given last callback, per channel, so
     /// the meter reads what can be heard rather than what is in the file.
@@ -101,6 +103,7 @@ impl TickDto {
         Self {
             a: empty,
             b: empty,
+            p: empty,
             sample_rate: 0,
             peak_left: 0.0,
             peak_right: 0.0,
@@ -464,6 +467,7 @@ pub fn tick_of(snapshot: &rbl_deck::Snapshot, master: &rbl_deck::Master) -> Tick
     TickDto {
         a: deck(&snapshot.a),
         b: deck(&snapshot.b),
+        p: deck(&snapshot.p),
         sample_rate: snapshot.sample_rate,
         peak_left,
         peak_right,
@@ -478,6 +482,7 @@ pub fn tick_of(snapshot: &rbl_deck::Snapshot, master: &rbl_deck::Master) -> Tick
 pub fn deck_of(name: &str) -> Deck {
     match name {
         "b" | "B" => Deck::B,
+        "p" | "P" => Deck::P,
         _ => Deck::A,
     }
 }
@@ -493,6 +498,7 @@ mod tests {
         assert_eq!(deck_of("a"), Deck::A);
         assert_eq!(deck_of("b"), Deck::B);
         assert_eq!(deck_of("B"), Deck::B);
+        assert_eq!(deck_of("p"), Deck::P);
         // The interface only ever sends what a tick gave it, so an unknown
         // name is a bug elsewhere rather than something to refuse a command
         // over; it plays on deck A.
