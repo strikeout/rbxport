@@ -1,9 +1,8 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  browseRowHeight,
+  browseListVars,
   browseScale,
-  browseVars,
   BROWSE_SCALE_DEFAULT,
   DEFAULT_PREFERENCES,
   formatKey,
@@ -37,11 +36,6 @@ describe("sanitisePreferences", () => {
     expect(sanitisePreferences({djSystem: {linkKeySort: "alphabetical"}}).djSystem.linkKeySort).toBe("alphabetical");
     expect(sanitisePreferences({djSystem: {linkKeySort: "invalid"}}).djSystem.linkKeySort).toBe("musical");
   });
-  it("mutes the players during a preview unless stop is chosen", () => {
-    expect(sanitisePreferences({}).audio.previewMainPlayers).toBe("mute");
-    expect(sanitisePreferences({ audio: { previewMainPlayers: "stop" } }).audio.previewMainPlayers).toBe("stop");
-    expect(sanitisePreferences({ audio: { previewMainPlayers: "pause" } }).audio.previewMainPlayers).toBe("mute");
-  });
   it("leaves automatic LINK joining off unless it is explicitly enabled", () => {
     expect(DEFAULT_PREFERENCES.djSystem.autoJoinLink).toBe(false);
     expect(sanitisePreferences({ djSystem: {} }).djSystem.autoJoinLink).toBe(false);
@@ -54,6 +48,13 @@ describe("sanitisePreferences", () => {
     expect(sanitisePreferences({ analysis: { auto: "yes" } }).analysis.auto).toBe(false);
     expect(sanitisePreferences({ analysis: { auto: true } }).analysis.auto).toBe(true);
   });
+
+  it("leaves the first-beat memory cue off unless it is explicitly enabled", () => {
+    expect(DEFAULT_PREFERENCES.analysis.firstBeatCue).toBe(false);
+    expect(sanitisePreferences({ analysis: { firstBeatCue: "yes" } }).analysis.firstBeatCue).toBe(false);
+    expect(sanitisePreferences({ analysis: { firstBeatCue: true } }).analysis.firstBeatCue).toBe(true);
+  });
+
   it("keeps the browser key-sort choice and preserves the old display-based ordering", () => {
     expect(sanitisePreferences({view: {keySort: "musical"}}).view.keySort).toBe("musical");
     expect(sanitisePreferences({view: {keySort: "invalid"}}).view.keySort).toBe("alphabetical");
@@ -150,16 +151,6 @@ describe("the sliders and the quantize value", () => {
     expect(browseScale(99)).toBe(1);
   });
 
-  it("give the track list and the playlist tree the same row and type", () => {
-    const view = { browseFontSize: 4, browseBold: true, browseLineSpace: 0 };
-    expect(browseRowHeight(view)).toBe(20);
-    expect(browseVars(view)).toEqual({
-      "--s-row-height": "20px",
-      "--f-size-ui": "calc(1.3 * var(--f-size-ui-base))",
-      "--browse-weight": 700,
-    });
-  });
-
   it("turn a beat value into a fraction of a beat", () => {
     expect(quantizeFraction("1/1")).toBe(1);
     expect(quantizeFraction("1/2")).toBe(0.5);
@@ -178,12 +169,32 @@ it("requires an explicit boolean to enable USB music cleanup", () => {
   expect(sanitisePreferences({ usbExport: { deleteUnlistedMusic: "true" } }).usbExport.deleteUnlistedMusic).toBe(false);
 });
 
-it("defaults compatibility conversion to off and WAV, and preserves MP3 selection", () => {
+it("defaults compatibility conversion to off and WAV, and preserves AIFF and MP3 selections", () => {
   const defaults = sanitisePreferences({}).usbExport;
   expect(defaults.maximumCompatibility).toBe(false);
   expect(defaults.conversionFormat).toBe("wav");
   expect(sanitisePreferences({ usbExport: { maximumCompatibility: true, conversionFormat: "mp3" } }).usbExport)
     .toMatchObject({ maximumCompatibility: true, conversionFormat: "mp3" });
+  expect(sanitisePreferences({ usbExport: { maximumCompatibility: true, conversionFormat: "aiff" } }).usbExport)
+    .toMatchObject({ maximumCompatibility: true, conversionFormat: "aiff" });
   expect(sanitisePreferences({ usbExport: { maximumCompatibility: "yes", conversionFormat: "flac" } }).usbExport)
     .toMatchObject({ maximumCompatibility: false, conversionFormat: "wav", importButtonCues: true, importButtonHistory: true, importButtonSettings: false });
+});
+
+describe("browseListVars", () => {
+  it("scales row height and font size from the Browse sliders", () => {
+    const v = { browseFontSize: 4, browseLineSpace: 0, browseBold: true };
+    const vars = browseListVars(v, 25);
+    expect(vars["--s-row-height"]).toBe("20px");
+    expect(vars["--f-size-ui"]).toBe("calc(1.3 * var(--f-size-ui-base))");
+    expect(vars["--browse-weight"]).toBe(700);
+  });
+  it("is the measured size at the default stops", () => {
+    const vars = browseListVars(
+      { browseFontSize: BROWSE_SCALE_DEFAULT, browseLineSpace: BROWSE_SCALE_DEFAULT, browseBold: false },
+      25,
+    );
+    expect(vars["--s-row-height"]).toBe("25px");
+    expect(vars["--browse-weight"]).toBe(400);
+  });
 });

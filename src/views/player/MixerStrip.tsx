@@ -11,9 +11,6 @@
  * one-player layout has no mixer and no crossfader, and a deck nobody has
  * touched a fader for plays at the level of its file.
  *
- * The kill buttons also answer the deck's EQ kill keys from `shortcuts.ts`,
- * which the Keyboard pane can change.
- *
  * Nothing here holds audio state of its own. The engine owns the strip — see
  * `crates/rbl-deck/src/mixer.rs` — and these are the knobs that reach it.
  */
@@ -21,9 +18,8 @@ import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import type { DeckId, EqBand } from "@/ipc/types";
 import { getBackend } from "@/ipc/client";
-import { detectPlatform, dispatchBinding, type Action } from "@/lib/shortcuts";
-import { useEventCallback } from "@/store/useEventCallback";
-import { usePreferences } from "@/store/usePreferences";
+import { detectPlatform, dispatchBinding, eqKillBand } from "@/lib/shortcuts";
+import { usePreferencesContext } from "@/store/usePreferences";
 import styles from "./MixerStrip.module.css";
 
 /** High to low, as the strip is drawn and as the mixer names them. */
@@ -32,9 +28,6 @@ const BANDS: ReadonlyArray<{ id: EqBand; label: string }> = [
   { id: "mid", label: "MID" },
   { id: "low", label: "LOW" },
 ];
-
-/** The band each EQ kill key toggles. */
-const KILL_KEYS: Partial<Record<Action, EqBand>> = { killLow: "low", killMid: "mid", killHigh: "high" };
 
 /** The knob's travel in pixels: a full sweep is this far under the pointer. */
 const KNOB_TRAVEL = 120;
@@ -95,21 +88,21 @@ const Channel = memo(function Channel({
     [deck],
   );
 
+  // The Keyboard pane's kill keys for this deck (unbound until assigned).
   const platform = useMemo(detectPlatform, []);
-  const keyOverrides = usePreferences().keyboard.overrides;
-  const onKey = useEventCallback((event: KeyboardEvent) => {
-    const hit = dispatchBinding(event, platform, event.target as HTMLElement | null, keyOverrides);
-    if (hit?.action === undefined || hit.deck !== deck) return;
-    const band = KILL_KEYS[hit.action];
-    if (band === undefined) return;
-    event.preventDefault();
-    // A held key toggles once, not on every repeat.
-    if (!event.repeat) toggle(band);
-  });
+  const overrides = usePreferencesContext().preferences.keyboard.overrides;
   useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      const hit = dispatchBinding(event, platform, event.target as HTMLElement | null, overrides);
+      if (hit?.action === undefined || hit.deck !== deck) return;
+      const band = eqKillBand(hit.action);
+      if (band === null) return;
+      event.preventDefault();
+      if (!event.repeat) toggle(band);
+    };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [onKey]);
+  }, [deck, overrides, platform, toggle]);
 
   const onKnobDown = useCallback(
     (event: React.PointerEvent<HTMLDivElement>) => {

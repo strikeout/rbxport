@@ -20,11 +20,12 @@ import { PAGE_SIZE } from "@/lib/rowCache";
 import { SEEDED_ROWS } from "@/lib/session";
 import { formatBpm, formatBytes, formatDuration, formatShortDate } from "@/lib/format";
 import {
-  applyClick, clickSettles, emptySelection, modifierFor, pressSelects, selectAll, type SelectionState,
+  applyClick, clickSettles, emptySelection, modifierFor, pressSelects, selectAll, selectedTracks, type SelectionState,
 } from "@/lib/selection";
 import { ContextMenu } from "@/components/ContextMenu";
 import { trackMenuFor, type MenuTarget } from "@/lib/contextMenus";
-import { WaveformPreview } from "./WaveformPreview";
+import { hasLooseId } from "@/lib/explorer";
+import { previewFromClick, WaveformPreview } from "./WaveformPreview";
 import styles from "./TrackTable.module.css";
 import { FilterIcon, SortDownIcon, SortUpIcon } from "@/components/icons";
 import { Artwork } from "@/components/Artwork";
@@ -32,8 +33,8 @@ import { RatingStar } from "@/components/RatingStar";
 import { RecordIcon } from "@/components/icons";
 import { EXTRA_COLUMNS, type ColumnKey, type ColumnSpec } from "@/lib/columns";
 import { COLOR_NAMES } from "@/lib/trackFilter";
-import { browseRowHeight, browseVars, formatKey } from "@/lib/preferences";
-import { trafficLightJump, type TrafficLightReach } from "@/lib/camelot";
+import { browseListVars, browseScale, formatKey } from "@/lib/preferences";
+import { trafficLightLit, type TrafficLightReach } from "@/lib/camelot";
 import { TickIcon } from "@/components/icons";
 import type { TrafficLightSource } from "@/lib/session";
 import { usePreferences, useTooltip } from "@/store/usePreferences";
@@ -42,6 +43,7 @@ import { ColumnMenu } from "./ColumnMenu";
 import { setRowDragImage } from "./dragGhost";
 import { detectPlatform, dispatch } from "@/lib/shortcuts";
 
+const ROW_H = 25; // --s-row-height
 /** One frozen empty list, so a row without cues does not re-render for a new one. */
 const NO_CUES: RowDto["hotCues"] = [];
 /**
@@ -344,7 +346,7 @@ const EditableCell = memo(function EditableCell({
 
 const TrackRow = memo(function TrackRow({
   row, top, selected, onSelect, onOpen, onDragStart, onDragEnd, index, columns, onRate,
-  onComment, onEditField, onEditBlocked, onMenu, keyDisplay, previewCues, clickToEdit, tooltips, trafficKey, trafficReach, trafficJumpColours,
+  onComment, onEditField, onEditBlocked, onMenu, keyDisplay, previewCues, clickToEdit, tooltips, trafficKey, trafficReach,
   reorderable, isLocalDrag, dropEdge, onReorderOver, onReorderDrop, startupCache,
 }: {
   row: RowDto | undefined;
@@ -362,8 +364,6 @@ const TrackRow = memo(function TrackRow({
   /** The Traffic Light: the key rows light against, and how far around it. Null lights nothing. */
   trafficKey: string | null;
   trafficReach: TrafficLightReach;
-  /** Preferences: a lit key takes the colour of its jump, not the one green. */
-  trafficJumpColours: boolean;
   onSelect: (index: number, id: string, e: React.MouseEvent) => void;
   /** Load the track into the player. A double-click, as in rekordbox. */
   onOpen: (index: number) => void;
@@ -456,6 +456,9 @@ const TrackRow = memo(function TrackRow({
       onClick={(e) => {
         if (suppressClick.current) return;
         if (clickSettles(e, selected)) onSelect(index, row.id, e);
+        // A click on the waveform also previews the track from there; the
+        // row is selected as well, as rekordbox's is.
+        if (row.analysed) previewFromClick(e, row.id, row.durationSec, previewCues ? row.hotCues : NO_CUES);
       }}
       onDoubleClick={() => onOpen(index)}
       onContextMenu={(e) => {
@@ -603,14 +606,13 @@ const TrackRow = memo(function TrackRow({
         }
         if (col.key === "key") {
           // The Traffic Light: a key that goes with the loaded track's is lit.
-          const jump = trafficKey === null ? null : trafficLightJump(row.key, trafficKey, trafficReach);
+          const lit = trafficKey !== null && trafficLightLit(row.key, trafficKey, trafficReach);
           return (
             <div
               key={col.key}
               className={styles.cell}
               data-col={col.key}
-              data-lit={jump !== null || undefined}
-              data-jump={trafficJumpColours && jump !== null ? jump : undefined}
+              data-lit={lit || undefined}
               role="gridcell"
             >
               {formatKey(row.key, keyDisplay)}
@@ -824,9 +826,9 @@ export const TrackTable = memo(function TrackTable({
     };
   }, [trafficMenu]);
   const clickToEdit = !preferences.advanced.doubleClickToEdit;
-  // Browse › Line Space scales the measured row; the virtualizer has to be
-  // told the same height the CSS draws.
-  const rowH = browseRowHeight(preferences.view);
+  // Browse › FontSize and Line Space scale the measured tokens; the
+  // virtualizer has to be told the same height the CSS draws.
+  const rowH = Math.round(ROW_H * browseScale(preferences.view.browseLineSpace));
 
   // Hand the top of the view up once it is real, for the next start's opening
   // screen. Only the first page, and only when it is filled.
@@ -1213,11 +1215,14 @@ export const TrackTable = memo(function TrackTable({
   const reportedSelection = useRef("");
   useEffect(() => {
     if (!onSelectedTracks) return;
-    const tracks: { id: string; title: string }[] = [];
-    for (let i = 0; i < view.count && tracks.length < selection.ids.size; i++) {
+    // Titles come from whatever pages are cached; the ids are the whole
+    // selection, cached or not.
+    const titles = new Map<string, string>();
+    for (let i = 0; i < view.count && titles.size < selection.ids.size; i++) {
       const row = view.rowAt(i);
-      if (row && selection.ids.has(row.id)) tracks.push({ id: row.id, title: row.title });
+      if (row && selection.ids.has(row.id)) titles.set(row.id, row.title);
     }
+    const tracks = selectedTracks(selection.ids, titles);
     // Only when it has actually changed. This hands a new array upwards, and
     // the app holds it in state: sending an equal one re-renders the window,
     // which renders this table, which runs this effect again.
@@ -1304,8 +1309,10 @@ export const TrackTable = memo(function TrackTable({
       style={{
         ["--cols" as string]: gridOf(columns),
         ["--table-w" as string]: `${totalWidthOf(columns)}px`,
-        // Browse › FontSize, Bold and Line Space, scoped to the list.
-        ...browseVars(preferences.view),
+        // Browse › FontSize, Bold and Line Space, scoped to the list: the
+        // tokens are the measured sizes, and these are the slider's multiples
+        // of them.
+        ...browseListVars(preferences.view, ROW_H),
       }}
       data-file-over={fileOver || undefined}
       onDragOver={(e) => {
@@ -1470,7 +1477,6 @@ export const TrackTable = memo(function TrackTable({
                 tooltips={tooltips}
                 trafficKey={trafficKey}
                 trafficReach={preferences.view.trafficLight}
-                trafficJumpColours={preferences.view.trafficLightJumpColours}
                 top={item.start - COL_HEADER_H}
                 selected={row ? selection.ids.has(row.id) : false}
                 onSelect={handleSelect}
@@ -1494,13 +1500,16 @@ export const TrackTable = memo(function TrackTable({
         <ContextMenu
           x={trackMenu.x}
           y={trackMenu.y}
-          rows={trackMenuFor(players, playlists, devices, { tagList: spec.source.kind === "tagList" })}
+          rows={trackMenuFor(players, playlists, devices, {
+            tagList: spec.source.kind === "tagList",
+            explorer: spec.source.kind === "folder",
+          })}
           label="Track"
           context={{
             inPlaylist: spec.source.kind === "playlist",
             inHistory: spec.source.kind === "history",
             hasFile: true,
-            loose: spec.source.kind === "folder",
+            loose: hasLooseId(selection.ids),
             readOnly,
           }}
           onChoose={(action) => {

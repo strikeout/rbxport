@@ -46,7 +46,6 @@ function tickWithLoop(loop: { inSeconds: number; outSeconds: number; active: boo
       looping: loop?.active ?? false,
     },
     b: { ...IDLE },
-    p: { ...IDLE },
     sampleRate: RATE,
     peakLeft: 0, peakRight: 0, master: 1, reduction: 0, shiftsKey: true,
   };

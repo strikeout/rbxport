@@ -32,6 +32,7 @@ let playhead: number;
 let clock: number;
 let setState: ReturnType<typeof vi.fn>;
 let onError: ReturnType<typeof vi.fn>;
+let confirm: ReturnType<typeof vi.fn>;
 let onNudge: ReturnType<typeof vi.fn>;
 let edits: {
   gridEdit: ReturnType<typeof vi.fn>;
@@ -44,10 +45,11 @@ interface ProbeProps {
   trackId: string | null;
   state: GridState | null;
   readOnly: boolean;
+  dynamic?: boolean;
 }
 
 /** Mounts the hook and hands the test what it returned. */
-function Probe({ trackId, state, readOnly }: ProbeProps) {
+function Probe({ trackId, state, readOnly, dynamic = false }: ProbeProps) {
   grid = useGridEditor({
     trackId,
     deck: "a",
@@ -56,6 +58,7 @@ function Probe({ trackId, state, readOnly }: ProbeProps) {
     positionMs: () => playhead,
     readOnly,
     onError,
+    isDynamicFrom: () => dynamic,
     onNudge,
   });
   return null;
@@ -103,7 +106,8 @@ beforeEach(() => {
     gridRedo: vi.fn(() => Promise.resolve(gridState())),
     gridLock: vi.fn(() => Promise.resolve(gridState())),
   };
-  __setBackend({ edits } as unknown as Backend);
+  confirm = vi.fn(() => Promise.resolve(true));
+  __setBackend({ edits, confirm } as unknown as Backend);
   host = document.createElement("div");
   document.body.append(host);
   root = createRoot(host);
@@ -193,6 +197,38 @@ describe("recovered grid control behavior", () => {
   it("clears scope when loading another track", async () => {
     mount(); act(() => grid.adjustFrom()); await settle();
     mount({trackId: "t2"}); expect(grid.fromMs).toBeNull();
+  });
+  it("asks through the backend's dialog before flattening tempo changes", async () => {
+    // window.confirm is answered Cancel by WKWebView on macOS (issue #86).
+    const native = vi.spyOn(window, "confirm").mockReturnValue(false);
+    mount({ dynamic: true });
+    act(() => grid.setBpm("128")); await settle(); await settle();
+    expect(native).not.toHaveBeenCalled();
+    expect(confirm).toHaveBeenCalledWith("This section has tempo changes. Replace them with a constant tempo?");
+    expect(edits.gridEdit).toHaveBeenLastCalledWith("t1", { kind: "tempo", bpmX100: 12800, anchorMs: 0 }, { deck: "a", allowDynamic: true });
+    confirm.mockResolvedValue(false);
+    act(() => grid.stretch(1)); await settle(); await settle();
+    expect(edits.gridEdit).toHaveBeenCalledTimes(1);
+  });
+  it("sends a playhead before the track's start as its start", async () => {
+    // The deck can sit up to five seconds before zero; the command takes
+    // unsigned milliseconds (#107: "set 1st beat" there failed to save).
+    mount(); playhead = -1234.4;
+    act(() => { grid.mark(); grid.align(); grid.stretch(1); }); await settle(); await settle(); await settle();
+    expect(edits.gridEdit.mock.calls.map(call => call[1] as GridEdit)).toEqual([
+      { kind: "downbeat", timeMs: 0 }, { kind: "align", timeMs: 0 }, { kind: "stretch", byMs: -1, timeMs: 0 },
+    ]);
+    act(() => grid.adjustFrom()); await settle();
+    expect(edits.gridEdit).toHaveBeenLastCalledWith("t1", { kind: "align", timeMs: 0 }, { deck: "a", fromMs: 0 });
+    act(() => grid.adjustAll());
+    act(() => grid.tap()); tick(500); act(() => grid.tap()); await settle();
+    expect(edits.gridEdit.mock.calls.at(-1)?.[1]).toEqual({ kind: "tap", bpm: 120, anchorMs: 0 });
+  });
+  it("says why a call Tauri refused before any command ran", async () => {
+    // Tauri rejects with a bare string, e.g. for a plugin command it does not
+    // register; that used to read as "The beat grid could not be saved." (#107).
+    edits.gridEdit.mockRejectedValue("Command confirm not found"); mount();
+    act(() => grid.double()); await settle(); expect(onError).toHaveBeenCalledWith("Command confirm not found");
   });
   it("reports failed writes", async () => {
     edits.gridEdit.mockRejectedValue({message: "write failed"}); mount();

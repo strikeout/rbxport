@@ -43,8 +43,14 @@ use crate::{Cue, Cues, Library, Playlists, Row, TagCategory};
 /// different `master.db` with the same counter — a test fixture rebuilt
 /// under another folder — was served the old one's file paths. 9 adds file
 /// metadata, derived indexes and a checksum; earlier caches rebuild once. 10
-/// preserves the database IDs of named lookup rows for Link Export.
-pub const FORMAT: u32 = 10;
+/// preserves the database IDs of named lookup rows for Link Export. 11 adds
+/// the columns behind the remaining sortable browser headings and their
+/// ranks. 12 adds which My Tags each track carries: formats 1 to 11 left
+/// them out, so an intelligent playlist on a My Tag opened empty. 13
+/// resolves a drive library's track paths through `BaseDBDrive` /
+/// `CurrentDBDrive`: formats 1 to 12 kept the stored `FolderPath`, so a
+/// drive that now mounts under another name kept serving its old paths.
+pub const FORMAT: u32 = 13;
 
 const MAGIC: &[u8; 4] = b"RBLX";
 
@@ -289,9 +295,22 @@ pub fn encode(library: &Library, fingerprint: Fingerprint) -> Vec<u8> {
     w.u32s(&library.bitrate);
     w.u32s(&library.sample_rate);
     w.u64s(&library.file_size);
+    // Format 11: the remaining sortable browser columns.
+    w.u32s(&library.track_number);
+    w.u16s(&library.disc_no);
+    w.bytes(&library.file_type);
+    w.u16s(&library.bit_depth);
+    w.bytes(&library.publish);
+    w.strings(&library.lyricist);
+    w.strings(&library.date_created);
+    w.strings(&library.message);
     w.u64(library.ranks.len() as u64);
     for rank in &library.ranks { w.u32s(rank); }
     w.strings(&library.search);
+    // Format 12: each track's My Tags, as bounds and ids (bit-cast to u32).
+    let (bounds, keys) = library.my_tag_parts();
+    w.u32s(bounds);
+    w.u32s(&keys.iter().map(|&k| u32::from_ne_bytes(k.to_ne_bytes())).collect::<Vec<_>>());
     w.u32(crc32fast::hash(&w.0));
     w.0
 }
@@ -515,6 +534,14 @@ pub fn decode(data: &[u8], want: Fingerprint) -> Option<Library> {
     lib.bitrate = r.u32s()?;
     lib.sample_rate = r.u32s()?;
     lib.file_size = r.u64s()?;
+    lib.track_number = r.u32s()?;
+    lib.disc_no = r.u16s()?;
+    lib.file_type = r.bytes()?;
+    lib.bit_depth = r.u16s()?;
+    lib.publish = r.bytes()?;
+    lib.lyricist = r.strings()?;
+    lib.date_created = r.strings()?;
+    lib.message = r.strings()?;
     if r.u64()? != crate::SortColumn::ALL.len() as u64 { return None; }
     for _ in crate::SortColumn::ALL {
         let rank = r.u32s()?;
@@ -528,8 +555,17 @@ pub fn decode(data: &[u8], want: Fingerprint) -> Option<Library> {
         lib.ranks.push(rank);
     }
     lib.search = r.strings()?;
+    let tag_bounds = r.u32s()?;
+    let tag_keys = r.u32s()?.into_iter().map(|k| i32::from_ne_bytes(k.to_ne_bytes())).collect();
+    if !lib.set_my_tag_parts(tag_bounds, tag_keys) {
+        return None;
+    }
     if lib.search.len() != count || lib.bitrate.len() != count
         || lib.sample_rate.len() != count || lib.file_size.len() != count
+        || lib.track_number.len() != count || lib.disc_no.len() != count
+        || lib.file_type.len() != count || lib.bit_depth.len() != count
+        || lib.publish.len() != count || lib.lyricist.len() != count
+        || lib.date_created.len() != count || lib.message.len() != count
         || r.at != data.len() { return None; }
     Some(lib)
 }

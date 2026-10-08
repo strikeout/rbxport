@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   actionFor, beatLoopLength, BINDINGS, chordFromEvent, describeChord, dispatch, hotCuePad, isTyping,
-  detectPlatform, matchBinding, memoryCueNumber, menuAccelerator, sameChord, type Platform,
+  detectPlatform, eqKillBand, matchBinding, memoryCueNumber, menuAccelerator, sameChord, type Platform,
 } from "./shortcuts";
 
 const MAC: Platform = { mac: true };
@@ -164,24 +164,22 @@ describe("rekordbox's own Export key map", () => {
   it("gives the deck the keys rekordbox gives it", () => {
     expect(actionFor({ key: " " }, mac)).toBe("playPause");
     expect(actionFor({ key: "c" }, mac)).toBe("cue");
-    // The preset's Q is Player A's HIGH kill here; Quantize moved to T.
-    expect(actionFor({ key: "t" }, mac)).toBe("quantize");
+    expect(actionFor({ key: "q" }, mac)).toBe("quantize");
     expect(actionFor({ key: "ArrowLeft" }, mac)).toBe("jumpBack");
     expect(actionFor({ key: "ArrowRight" }, mac)).toBe("jumpForward");
   });
 
-  it("gives the MEMORY cluster M, B, N and V", () => {
+  it("gives the MEMORY cluster M, B, N and X", () => {
     // `M` Memory Cue, `B` Call Previous Memory Cue, `N` Call Next Memory
-    // Cue — the Export preset's own bindings. The preset's `X` Delete Memory
-    // Cue is on `V`, because `X` is Player B's LOW kill.
+    // Cue, `X` Delete Memory Cue — the Export preset's own bindings.
     expect(actionFor({ key: "m" }, mac)).toBe("memoryCue");
     expect(actionFor({ key: "b" }, mac)).toBe("previousMemoryCue");
     expect(actionFor({ key: "n" }, mac)).toBe("nextMemoryCue");
-    expect(actionFor({ key: "v" }, mac)).toBe("deleteMemoryCue");
-    // ⌘V is paste, and ⌘M minimises the window.
-    expect(actionFor({ key: "v", metaKey: true }, mac)).not.toBe("deleteMemoryCue");
+    expect(actionFor({ key: "x" }, mac)).toBe("deleteMemoryCue");
+    // ⌘X is cut, and ⌘M minimises the window.
+    expect(actionFor({ key: "x", metaKey: true }, mac)).not.toBe("deleteMemoryCue");
     expect(actionFor({ key: "m", metaKey: true }, mac)).not.toBe("memoryCue");
-    expect(dispatch({ key: "v" }, mac, { tagName: "INPUT" })).toBeNull();
+    expect(dispatch({ key: "x" }, mac, { tagName: "INPUT" })).toBeNull();
   });
 
   it("gives the first three pads 1, 2 and 3, and their clears the same with command", () => {
@@ -202,6 +200,33 @@ describe("rekordbox's own Export key map", () => {
     expect(hotCuePad("cue")).toBeNull();
   });
 
+  it("lists hot cue pads D to H and every clear as unbound rows the pane can assign", () => {
+    const own = BINDINGS.filter((b) => b.pane !== undefined && hotCuePad(b.action ?? "cue") !== null);
+    const names = (deck: "a" | "b") => own.filter((b) => b.deck === deck).map((b) => b.action).sort();
+    const letters = ["D", "E", "F", "G", "H"];
+    const setD2H = letters.map((l) => `hotCue${l}`);
+    const clearD2H = letters.map((l) => `clearHotCue${l}`);
+    expect(names("a")).toEqual([...clearD2H, ...setD2H].sort());
+    // The preset gives Player B no clears at all, so A to C are added there too.
+    expect(names("b")).toEqual([...clearD2H, ...setD2H, "clearHotCueA", "clearHotCueB", "clearHotCueC"].sort());
+    for (const row of own) expect(row.chord.key).toBe("");
+    expect(new Set(BINDINGS.map((b) => b.id)).size).toBe(BINDINGS.length);
+    expect(hotCuePad("hotCueH")).toEqual({ letter: "H", clear: false });
+    expect(hotCuePad("clearHotCueF")).toEqual({ letter: "F", clear: true });
+    // Nothing fires until a key is assigned.
+    expect(actionFor({ key: "" }, mac)).toBeNull();
+  });
+
+  it("fires a pad D to H or a Player B clear once the person assigns a key", () => {
+    const overrides = {
+      hotCueH: { key: "8", altKey: true },
+      "b.clearHotCueA": { key: "x", shiftKey: true, metaKey: true },
+    };
+    expect(matchBinding({ key: "8", altKey: true }, mac, overrides)).toMatchObject({ action: "hotCueH", deck: "a" });
+    expect(matchBinding({ key: "x", shiftKey: true, metaKey: true }, mac, overrides))
+      .toMatchObject({ action: "clearHotCueA", deck: "b" });
+  });
+
   it("gives the loop I, O and R, the beat loops 4 to 9, and / and option + \\ the length", () => {
     expect(actionFor({ key: "i" }, mac)).toBe("loopIn");
     expect(actionFor({ key: "o" }, mac)).toBe("loopOut");
@@ -214,11 +239,8 @@ describe("rekordbox's own Export key map", () => {
     expect(actionFor({ key: "«", code: "Backslash", altKey: true }, mac)).toBe("loopDouble");
   });
 
-  it("calls the first ten memory cues on E, U and D to ;, and gives the tempo the function keys", () => {
-    // The preset's A and S are Player A's MID kill and Player B's.
-    expect(actionFor({ key: "e" }, mac)).toBe("callMemoryCue1");
-    expect(actionFor({ key: "u" }, mac)).toBe("callMemoryCue2");
-    expect(actionFor({ key: "d" }, mac)).toBe("callMemoryCue3");
+  it("calls the first ten memory cues on A to ;, and gives the tempo the function keys", () => {
+    expect(actionFor({ key: "a" }, mac)).toBe("callMemoryCue1");
     expect(actionFor({ key: ";" }, mac)).toBe("callMemoryCue10");
     expect(memoryCueNumber("callMemoryCue7")).toBe(7);
     expect(memoryCueNumber("cue")).toBeNull();
@@ -240,18 +262,6 @@ describe("rekordbox's own Export key map", () => {
     // The master's keys.
     expect(actionFor({ key: "F12", metaKey: true }, mac)).toBe("volumeUp");
     expect(actionFor({ key: "F10", metaKey: true }, mac)).toBe("mute");
-  });
-
-  it("gives the EQ kills Y, A and Q to Player A and X, S and W to Player B", () => {
-    expect(matchBinding({ key: "y" }, mac)).toMatchObject({ action: "killLow", deck: "a" });
-    expect(matchBinding({ key: "a" }, mac)).toMatchObject({ action: "killMid", deck: "a" });
-    expect(matchBinding({ key: "q" }, mac)).toMatchObject({ action: "killHigh", deck: "a" });
-    expect(matchBinding({ key: "x" }, mac)).toMatchObject({ action: "killLow", deck: "b" });
-    expect(matchBinding({ key: "s" }, mac)).toMatchObject({ action: "killMid", deck: "b" });
-    expect(matchBinding({ key: "w" }, mac)).toMatchObject({ action: "killHigh", deck: "b" });
-    // Player B's kills are their own keys, not Player A's with shift.
-    expect(actionFor({ key: "Y", shiftKey: true }, mac)).toBeNull();
-    expect(dispatch({ key: "q" }, mac, { tagName: "INPUT" })).toBeNull();
   });
 
   it("reads a key of the person's own in place of the preset's", () => {
@@ -283,8 +293,7 @@ describe("rekordbox's own Export key map", () => {
     // ⌘C is copy, and ⌘Q quits. Taking either would be a bug people notice at
     // the worst moment.
     expect(actionFor({ key: "c", metaKey: true }, mac)).not.toBe("cue");
-    expect(actionFor({ key: "t", metaKey: true }, mac)).not.toBe("quantize");
-    expect(actionFor({ key: "q", metaKey: true }, mac)).not.toBe("killHigh");
+    expect(actionFor({ key: "q", metaKey: true }, mac)).not.toBe("quantize");
   });
 
   it("does not fire the deck's letters into a search box", () => {
@@ -309,7 +318,7 @@ describe("the Keyboard pane's bindings", () => {
   it("lists only chords the map actually answers to, under the deck and the browser", () => {
     // The menu accelerators are the shell's, and A is the track list's own
     // key for analysis; neither goes through the map.
-    const mapped = BINDINGS.filter((b) => b.group !== "Menu");
+    const mapped = BINDINGS.filter((b) => b.group !== "Menu" && b.chord.key !== "");
     for (const binding of mapped) {
       const chord = { ...binding.chord, metaKey: binding.chord.metaKey ?? false };
       expect(actionFor(chord, mac), binding.label).not.toBeNull();
@@ -351,5 +360,30 @@ describe("the GRID panel's keys", () => {
     for (const id of ["303e", "3043", "3044", "3045"]) expect(ids).toContain(id);
     expect(describeChord({ key: "\\", metaKey: true, altKey: true }, MAC)).toBe("option + command + \\");
     expect(describeChord({ key: "ArrowLeft", metaKey: true }, WIN)).toBe("ctrl + cursor left");
+  });
+});
+
+describe("the mixer's EQ kill keys", () => {
+  it("are listed for both decks but start unbound, rekordbox's preset having none", () => {
+    const kills = BINDINGS.filter((b) => eqKillBand(b.action ?? "cue") !== null);
+    expect(kills.map((b) => `${b.deck}:${b.action}`).sort()).toEqual([
+      "a:eqKillHigh", "a:eqKillLow", "a:eqKillMid", "b:eqKillHigh", "b:eqKillLow", "b:eqKillMid",
+    ]);
+    for (const kill of kills) expect(kill.chord.key).toBe("");
+    // An unbound row matches no key, not even an empty one.
+    expect(actionFor({ key: "" }, MAC)).toBeNull();
+  });
+
+  it("answer to the key the person gives them, for the deck it is filed under", () => {
+    const overrides = { "b.eqKillMid": { key: "u", shiftKey: true } };
+    expect(matchBinding({ key: "U", shiftKey: true }, MAC, overrides)).toMatchObject({ action: "eqKillMid", deck: "b" });
+    expect(matchBinding({ key: "u", shiftKey: true }, MAC)).toBeNull();
+  });
+
+  it("names the band an action toggles", () => {
+    expect(eqKillBand("eqKillLow")).toBe("low");
+    expect(eqKillBand("eqKillMid")).toBe("mid");
+    expect(eqKillBand("eqKillHigh")).toBe("high");
+    expect(eqKillBand("cue")).toBeNull();
   });
 });

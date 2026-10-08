@@ -10,7 +10,6 @@
  * the same way: a hand-edited value, a value from a build that spelt a choice
  * differently, or nothing at all must each come back as a working set.
  */
-import type { CSSProperties } from "react";
 import { ANALYSIS_SLOTS, SLOTS } from "./queue";
 import type { KeyChord } from "./shortcuts";
 import { toCamelot, type TrafficLightReach } from "./camelot";
@@ -42,12 +41,6 @@ export const BUFFER_SIZES: readonly number[] = [64, 128, 256, 512, 1024, 2048];
 export type MetronomeSound = 1 | 2 | 3;
 export type MetronomeVolume = "small" | "middle" | "large";
 
-/**
- * What the decks do while a track plays from a click on its preview waveform
- * in the browser: they play on unheard, or they pause until the preview ends.
- */
-export type PreviewMainPlayers = "mute" | "stop";
-
 /** The fraction of a beat the quantized cue snaps to. */
 export type QuantizeBeat = "1/1" | "1/2" | "1/4" | "1/8";
 
@@ -77,26 +70,19 @@ export function browseScale(step: number): number {
   return BROWSE_SCALES[step] ?? 1;
 }
 
-/** The measured browse row height, in pixels: `--s-row-height`. */
-export const BROWSE_ROW_H = 25;
-
-/** The row height in pixels for the Line Space slider. */
-export function browseRowHeight(view: Pick<ViewPreferences, "browseLineSpace">): number {
-  return Math.round(BROWSE_ROW_H * browseScale(view.browseLineSpace));
-}
-
 /**
- * Browse › FontSize, Bold and Line Space, as the CSS variables a browse list
- * reads. The track list and the playlist tree set them on their own elements:
- * on the root, they would also scale the rest of the interface.
+ * Browse › FontSize, Bold and Line Space as the CSS custom properties the
+ * browser's lists draw with, so the track table and the playlist tree share
+ * one rule. `rowBase` is the measured row height in px (`--s-row-height`).
  */
-export function browseVars(
-  view: Pick<ViewPreferences, "browseFontSize" | "browseBold" | "browseLineSpace">,
-): CSSProperties {
+export function browseListVars(
+  view: { browseFontSize: number; browseLineSpace: number; browseBold: boolean },
+  rowBase: number,
+): Record<string, string | number> {
   return {
-    ["--s-row-height" as string]: `${browseRowHeight(view)}px`,
-    ["--f-size-ui" as string]: `calc(${browseScale(view.browseFontSize)} * var(--f-size-ui-base))`,
-    ["--browse-weight" as string]: view.browseBold ? 700 : 400,
+    "--s-row-height": `${Math.round(rowBase * browseScale(view.browseLineSpace))}px`,
+    "--f-size-ui": `calc(${browseScale(view.browseFontSize)} * var(--f-size-ui-base))`,
+    "--browse-weight": view.browseBold ? 700 : 400,
   };
 }
 
@@ -153,11 +139,6 @@ export interface ViewPreferences {
   vocalFull: boolean;
   /** Traffic Light: how far around the loaded track's key the browser lights. */
   trafficLight: TrafficLightReach;
-  /**
-   * Traffic Light › Jump colours: each lit key takes the colour of its jump
-   * from the loaded track. Off gives the rekordbox green for every lit key.
-   */
-  trafficLightJumpColours: boolean;
   /** Color › Waveform color: the deck's palette — BLUE, RGB or 3Band. */
   waveformColor: WaveformColor;
   /** Color › HOT CUE color. */
@@ -179,7 +160,6 @@ export interface AudioPreferences {
   bufferSize: number;
   metronomeSound: MetronomeSound;
   metronomeVolume: MetronomeVolume;
-  previewMainPlayers: PreviewMainPlayers;
 }
 
 export type AnalysisMode = "rekordbox" | "rbxport";
@@ -189,6 +169,8 @@ export interface AnalysisPreferences {
   concurrentTracks: number;
   /** Auto Analysis: analyse a track when it is added to the library. */
   auto: boolean;
+  /** Add a memory cue on the first beat; also the Analysis Setting default. */
+  firstBeatCue: boolean;
 }
 
 /**
@@ -258,7 +240,7 @@ export interface Preferences {
   advanced: AdvancedPreferences;
   keyboard: KeyboardPreferences;
   usbExport: {
-    importSettings: boolean; importHistory: boolean; deleteUnlistedMusic: boolean; maximumCompatibility: boolean; conversionFormat: "wav" | "mp3";
+    importSettings: boolean; importHistory: boolean; deleteUnlistedMusic: boolean; maximumCompatibility: boolean; conversionFormat: "wav" | "aiff" | "mp3";
     /** What Sync Manager's Import button has ticked when the window opens. */
     importButtonCues: boolean; importButtonHistory: boolean; importButtonSettings: boolean;
   };
@@ -294,7 +276,6 @@ export const DEFAULT_PREFERENCES: Preferences = {
     phraseLabels: true,
     vocalFull: true,
     trafficLight: "related3",
-    trafficLightJumpColours: false,
     waveformColor: "3band",
     hotCueColor: "colorful",
     beatCount: "position",
@@ -307,12 +288,12 @@ export const DEFAULT_PREFERENCES: Preferences = {
     bufferSize: 512,
     metronomeSound: 2,
     metronomeVolume: "large",
-    previewMainPlayers: "mute",
   },
   analysis: {
     mode: "rbxport",
     concurrentTracks: SLOTS,
     auto: false,
+    firstBeatCue: false,
   },
   djSystem: {
     waveformColor: "3band",
@@ -410,7 +391,6 @@ const HOT_CUE_COLORS: readonly HotCueColor[] = ["colorful", "cdj"];
 const BEAT_COUNTS: readonly BeatCount[] = ["position", "toMemoryBars", "toMemoryBeats"];
 const METRONOME_SOUNDS: readonly MetronomeSound[] = [1, 2, 3];
 const METRONOME_VOLUMES: readonly MetronomeVolume[] = ["small", "middle", "large"];
-const PREVIEW_MAIN_PLAYERS: readonly PreviewMainPlayers[] = ["mute", "stop"];
 
 function oneOfNumber<T extends number>(value: unknown, choices: readonly T[], fallback: T): T {
   return choices.includes(value as T) ? (value as T) : fallback;
@@ -440,7 +420,7 @@ export function sanitisePreferences(value: unknown): Preferences {
   const d = DEFAULT_PREFERENCES;
   return {
     rekordbox: { syncBrowseSettings: bool(rekordbox.syncBrowseSettings, true) },
-    usbExport: { importSettings: bool(usb.importSettings, false), importHistory: bool(usb.importHistory, true), deleteUnlistedMusic: bool(usb.deleteUnlistedMusic, false), maximumCompatibility: bool(usb.maximumCompatibility, false), conversionFormat: usb.conversionFormat === "mp3" ? "mp3" : "wav", importButtonCues: bool(usb.importButtonCues, true), importButtonHistory: bool(usb.importButtonHistory, true), importButtonSettings: bool(usb.importButtonSettings, false) },
+    usbExport: { importSettings: bool(usb.importSettings, false), importHistory: bool(usb.importHistory, true), deleteUnlistedMusic: bool(usb.deleteUnlistedMusic, false), maximumCompatibility: bool(usb.maximumCompatibility, false), conversionFormat: oneOf(usb.conversionFormat, ["wav", "aiff", "mp3"] as const, "wav"), importButtonCues: bool(usb.importButtonCues, true), importButtonHistory: bool(usb.importButtonHistory, true), importButtonSettings: bool(usb.importButtonSettings, false) },
     view: {
       locale: oneOf(view.locale, LOCALES, d.view.locale),
       showBpmChanges: bool(view.showBpmChanges, d.view.showBpmChanges),
@@ -466,7 +446,6 @@ export function sanitisePreferences(value: unknown): Preferences {
       phraseLabels: bool(view.phraseLabels, d.view.phraseLabels),
       vocalFull: bool(view.vocalFull, d.view.vocalFull),
       trafficLight: oneOf(view.trafficLight, REACHES, d.view.trafficLight),
-      trafficLightJumpColours: bool(view.trafficLightJumpColours, d.view.trafficLightJumpColours),
       waveformColor: oneOf(view.waveformColor, WAVEFORM_COLORS, d.view.waveformColor),
       hotCueColor: oneOf(view.hotCueColor, HOT_CUE_COLORS, d.view.hotCueColor),
       beatCount: oneOf(view.beatCount, BEAT_COUNTS, d.view.beatCount),
@@ -477,12 +456,12 @@ export function sanitisePreferences(value: unknown): Preferences {
       bufferSize: oneOfNumber(audio.bufferSize, BUFFER_SIZES, d.audio.bufferSize),
       metronomeSound: oneOfNumber(audio.metronomeSound, METRONOME_SOUNDS, d.audio.metronomeSound),
       metronomeVolume: oneOf(audio.metronomeVolume, METRONOME_VOLUMES, d.audio.metronomeVolume),
-      previewMainPlayers: oneOf(audio.previewMainPlayers, PREVIEW_MAIN_PLAYERS, d.audio.previewMainPlayers),
     },
     analysis: {
       mode: oneOf(analysis.mode, ["rekordbox", "rbxport"], d.analysis.mode),
       concurrentTracks: oneOfNumber(analysis.concurrentTracks, ANALYSIS_SLOTS, SLOTS),
       auto: bool(analysis.auto, d.analysis.auto),
+      firstBeatCue: bool(analysis.firstBeatCue, d.analysis.firstBeatCue),
     },
     djSystem: {
       waveformColor: oneOf(dj.waveformColor, WAVEFORM_COLORS, d.djSystem.waveformColor),

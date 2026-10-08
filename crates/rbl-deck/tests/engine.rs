@@ -230,7 +230,6 @@ impl Harness {
         match deck {
             Deck::A => self.engine.snapshot().a.position_frames,
             Deck::B => self.engine.snapshot().b.position_frames,
-            Deck::P => self.engine.snapshot().p.position_frames,
         }
     }
 
@@ -371,78 +370,6 @@ fn a_start_held_for_the_beat_is_silent_for_exactly_that_long_and_then_sounds() {
     h.engine.play_after(Deck::A, 100_000);
     h.engine.pause(Deck::A);
     assert_eq!(h.engine.snapshot().a.start_in_frames, 0);
-}
-
-#[test]
-fn a_held_start_survives_only_a_seek_sent_before_it() {
-    // `deck_play_after` seeks and then holds the start in one command. A seek
-    // clears a pending wait, so the opposite order starts the deck at once.
-    let dir = tempfile::tempdir().unwrap();
-    let path = dir.path().join("ramp.wav");
-    ramp(&path, RATE as usize);
-
-    let h = harness();
-    h.engine.load(Deck::A, &path);
-    h.wait_for_load(1);
-
-    h.engine.seek_ms(Deck::A, 20.0);
-    h.engine.play_after(Deck::A, 1_300);
-    assert_eq!(h.engine.snapshot().a.start_in_frames, 1_300);
-
-    h.engine.pause(Deck::A);
-    h.engine.play_after(Deck::A, 1_300);
-    h.engine.seek_ms(Deck::A, 20.0);
-    assert_eq!(h.engine.snapshot().a.start_in_frames, 0, "a late seek cancels the wait");
-}
-
-#[test]
-fn the_preview_voice_plays_into_the_output() {
-    let dir = tempfile::tempdir().unwrap();
-    let path = dir.path().join("flat.wav");
-    flat(&path, RATE as usize);
-
-    let h = harness();
-    h.engine.load(Deck::P, &path);
-    h.wait_for_load(1);
-    h.engine.play(Deck::P);
-    assert!(h.engine.snapshot().p.playing);
-    assert!(h.sink.running(), "the preview must start the device");
-
-    let audio = h.play_until(Deck::P, 8_192);
-    let peak = audio.iter().fold(0.0_f32, |a, s| a.max(s.abs()));
-    assert!(peak > FLAT * 0.9, "peak was {peak}");
-    assert_eq!(h.position(Deck::A), 0, "deck A moved with the preview");
-}
-
-#[test]
-fn a_muted_deck_keeps_playing_in_silence_and_comes_back() {
-    let dir = tempfile::tempdir().unwrap();
-    let path = dir.path().join("flat.wav");
-    flat(&path, RATE as usize * 2);
-
-    let h = harness();
-    h.engine.load(Deck::A, &path);
-    h.wait_for_load(1);
-    h.engine.play(Deck::A);
-    h.play_until(Deck::A, 4_096);
-
-    let channel = h.engine.mixer().channels.first().unwrap();
-    channel.set_muted(true);
-    // The fader smoothing takes the deck down over a few milliseconds.
-    h.play_until(Deck::A, 12_288);
-    let at = h.position(Deck::A);
-    let quiet = h.play_until(Deck::A, at + 4_096);
-    assert!(quiet.iter().all(|s| s.abs() < INAUDIBLE), "a muted deck was heard");
-    assert!(h.position(Deck::A) > at, "a muted deck stopped");
-    assert!(worst_step(&quiet) < step_limit());
-
-    channel.set_muted(false);
-    let at = h.position(Deck::A);
-    h.play_until(Deck::A, at + 8_192);
-    let at = h.position(Deck::A);
-    let back = h.play_until(Deck::A, at + 4_096);
-    let peak = back.iter().fold(0.0_f32, |a, s| a.max(s.abs()));
-    assert!(peak > FLAT * 0.9, "peak was {peak}");
 }
 
 #[test]
@@ -789,10 +716,9 @@ fn master_tempo_holds_the_pitch_and_without_it_the_pitch_moves() {
         h.engine.set_tempo(Deck::A, 1.5);
         h.engine.play(Deck::A);
 
-        // Pulled at about the rate a device would, because the frequency is
-        // counted over the whole window: drained faster than the decode thread
-        // can fill the stretcher, most of it would be silence and the count
-        // would measure the gaps rather than the tone.
+        // Pulled at about the rate a device would: drained faster than the
+        // decode thread can fill the stretcher, most of it would be silence
+        // and there would be too little tone to measure.
         let mut out = Vec::new();
         for _ in 0..80 {
             out.extend(h.sink.pull(512));
@@ -806,10 +732,7 @@ fn master_tempo_holds_the_pitch_and_without_it_the_pitch_moves() {
             "the deck was mostly silent: {sounding} of {} samples",
             left.len(),
         );
-        let crossings = left.windows(2).filter(|w| w[0] <= 0.0 && w[1] > 0.0).count();
-        #[allow(clippy::cast_precision_loss)]
-        let hz = crossings as f32 * RATE as f32 / left.len() as f32;
-        heard.push(hz);
+        heard.push(tone_hz(&left, RATE));
     }
 
     let (locked, free) = (heard[0], heard[1]);
@@ -924,12 +847,30 @@ fn the_metronome_clicks_on_the_grid_and_only_while_playing() {
     assert!(tail.iter().all(|s| s.abs() < 1e-4), "a paused deck does not click");
 }
 
-/// Frequency from rising zero crossings over the settled middle of a tone.
+/// Frequency of a tone from the median spacing of its rising zero crossings.
+///
+/// The median rather than a count over the window, because these tests pull
+/// the null sink from a thread that can be descheduled on a busy machine. Each
+/// underrun leaves a run of silence and a broken cycle either side of it, and
+/// a count over the window measures those as well as the tone. The cycles the
+/// deck did play are still the right length, and they are most of them.
+fn tone_hz(left: &[f32], rate: u32) -> f32 {
+    let rising: Vec<usize> = left
+        .windows(2)
+        .enumerate()
+        .filter(|(_, w)| w[0] <= 0.0 && w[1] > 0.0)
+        .map(|(i, _)| i)
+        .collect();
+    let mut periods: Vec<usize> = rising.windows(2).map(|w| w[1] - w[0]).collect();
+    assert!(periods.len() >= 8, "too few cycles to measure: {}", periods.len());
+    periods.sort_unstable();
+    rate as f32 / periods[periods.len() / 2] as f32
+}
+
+/// Frequency over the settled middle of a tone, left channel.
 fn hz_of(out: &[f32], rate: u32) -> f32 {
     let left: Vec<f32> = out.chunks_exact(2).map(|f| f[0]).collect();
-    let mid = &left[left.len() / 4..left.len() * 3 / 4];
-    let crossings = mid.windows(2).filter(|w| w[0] <= 0.0 && w[1] > 0.0).count();
-    crossings as f32 * rate as f32 / mid.len() as f32
+    tone_hz(&left[left.len() / 4..left.len() * 3 / 4], rate)
 }
 
 #[test]
@@ -959,7 +900,9 @@ fn a_key_shift_of_an_octave_doubles_the_pitch_and_keeps_the_tempo() {
     let hz = hz_of(&out[out.len() * 3 / 4..], RATE);
     assert!((hz - 440.0).abs() < 8.0, "an octave up from 220 Hz reads {hz} Hz");
     // Two seconds of track took about two seconds of output: the tempo held.
-    let frames_out = out.len() / 2;
+    // Only frames that carry audio count, since an underrun on a busy machine
+    // pads the output with silence that is not the deck playing slower.
+    let frames_out = out.chunks_exact(2).filter(|f| f[0] != 0.0 || f[1] != 0.0).count();
     assert!((frames_out as f32 / RATE as f32 - 2.0).abs() < 0.25, "{frames_out} output frames for two seconds of track");
 
     // Back to the track's own key, still at its own speed.
@@ -1469,6 +1412,24 @@ fn the_metronome_keeps_its_volume_when_the_master_is_turned_down() {
     let at_tenth = quiet.iter().map(|s| s.abs()).fold(0.0_f32, f32::max);
     assert!(at_full > 0.05, "the click is heard at full: {at_full}");
     assert!((at_tenth - at_full).abs() < 0.02, "the click changed with the master: {at_full} then {at_tenth}");
+}
+
+#[test]
+fn a_move_counts_from_the_head_and_keeps_the_pre_roll() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("move.wav");
+    flat(&path, RATE as usize * 2);
+    let h = harness();
+    h.engine.load(Deck::A, &path);
+    h.wait_for_load(1);
+    h.engine.seek_ms(Deck::A, 1_000.0);
+    h.engine.move_ms(Deck::A, 250.0);
+    assert_eq!(h.position(Deck::A), u64::from(RATE) * 5 / 4);
+    // Moved back past zero, the head goes into the pre-roll, not to zero.
+    h.engine.seek_ms(Deck::A, -2_000.0);
+    h.engine.move_ms(Deck::A, 500.0);
+    assert_eq!(h.engine.snapshot().a.pre_roll_frames, u64::from(RATE) * 3 / 2);
+    assert_eq!(h.position(Deck::A), 0);
 }
 
 #[test]

@@ -66,8 +66,6 @@ pub struct DeckTickDto {
 pub struct TickDto {
     pub a: DeckTickDto,
     pub b: DeckTickDto,
-    /// The browser's preview voice.
-    pub p: DeckTickDto,
     pub sample_rate: u32,
     /// The loudest sample the device was given last callback, per channel, so
     /// the meter reads what can be heard rather than what is in the file.
@@ -103,7 +101,6 @@ impl TickDto {
         Self {
             a: empty,
             b: empty,
-            p: empty,
             sample_rate: 0,
             peak_left: 0.0,
             peak_right: 0.0,
@@ -178,6 +175,10 @@ pub struct Player {
     /// would go back to the default every time.
     limiter: Mutex<LimiterDto>,
     master_level: Mutex<f32>,
+    /// Whether the engine's load events go to the interface as `deck:*`.
+    /// The browser's preview player is a second engine and keeps quiet: its
+    /// deck A is not the player's deck A.
+    emits_deck_events: bool,
 }
 
 impl Default for Player {
@@ -207,7 +208,15 @@ impl Player {
                 ceiling_db: rbl_deck::DEFAULT_CEILING_DB,
                 release_ms: rbl_deck::DEFAULT_RELEASE_MS,
             }),
+            emits_deck_events: true,
         }
+    }
+
+    /// The same player, with its load events kept to itself.
+    #[must_use]
+    pub fn quiet(mut self) -> Self {
+        self.emits_deck_events = false;
+        self
     }
 }
 
@@ -234,8 +243,11 @@ impl Player {
             return Ok(Arc::clone(engine));
         }
         let handle = app.clone();
+        let emits = self.emits_deck_events;
         let events: rbl_deck::EventSink = Arc::new(move |event: DeckEvent| {
-            emit_deck_event(&handle, &event);
+            if emits {
+                emit_deck_event(&handle, &event);
+            }
         });
         let device = self.device.lock().clone();
         let wish = *self.wish.lock();
@@ -467,7 +479,6 @@ pub fn tick_of(snapshot: &rbl_deck::Snapshot, master: &rbl_deck::Master) -> Tick
     TickDto {
         a: deck(&snapshot.a),
         b: deck(&snapshot.b),
-        p: deck(&snapshot.p),
         sample_rate: snapshot.sample_rate,
         peak_left,
         peak_right,
@@ -482,7 +493,6 @@ pub fn tick_of(snapshot: &rbl_deck::Snapshot, master: &rbl_deck::Master) -> Tick
 pub fn deck_of(name: &str) -> Deck {
     match name {
         "b" | "B" => Deck::B,
-        "p" | "P" => Deck::P,
         _ => Deck::A,
     }
 }
@@ -498,7 +508,6 @@ mod tests {
         assert_eq!(deck_of("a"), Deck::A);
         assert_eq!(deck_of("b"), Deck::B);
         assert_eq!(deck_of("B"), Deck::B);
-        assert_eq!(deck_of("p"), Deck::P);
         // The interface only ever sends what a tick gave it, so an unknown
         // name is a bug elsewhere rather than something to refuse a command
         // over; it plays on deck A.

@@ -5,15 +5,17 @@
  * bitmap, so scrolling back over a row is a single `drawImage` rather than an
  * IPC round trip and a redraw.
  */
-import { memo, useEffect, useRef } from "react";
+import { memo, useEffect, useRef, type MouseEvent as ReactMouseEvent } from "react";
 import { getBackend } from "@/ipc/client";
 import type { RowCue } from "@/ipc/types";
 import {
-  drawPreviewMemoryCues, drawPreviewCues, renderPreview, waveformKindOf, WaveformCache, type RenderedWaveform, type WavePalette,
+  drawPreviewMemoryCues, drawPreviewCues, previewClickMs, renderPreview, waveformKindOf, WaveformCache,
+  type RenderedWaveform, type WavePalette,
 } from "@/canvas";
+import { useTranslation } from "@/i18n";
 import { usePreferences } from "@/store/usePreferences";
-import { usePreview } from "@/store/usePreview";
-import styles from "./WaveformPreview.module.css";
+import { previewPositionMs, startPreview, stopPreview, usePreview } from "@/store/usePreview";
+import styles from "./TrackTable.module.css";
 
 /** Shared across every row: bounded, and released when entries fall out. */
 const cache = new WaveformCache(500);
@@ -147,7 +149,7 @@ export const WaveformPreview = memo(function WaveformPreview({
   const ref = useRef<HTMLCanvasElement>(null);
   // View › Color › Waveform color: the row follows the deck's palette, and a
   // bitmap rendered in one palette is not the row in another.
-  const { waveformColor: palette, hotCueColor, tooltips } = usePreferences().view;
+  const { waveformColor: palette, hotCueColor } = usePreferences().view;
 
   useEffect(() => {
     let cancelled = false;
@@ -187,61 +189,94 @@ export const WaveformPreview = memo(function WaveformPreview({
     };
   }, [trackId, width, height, hotCues, memoryCues, durationSec, palette, hotCueColor, startupCache]);
 
-  // A click plays the track from that place on the preview voice. The row
-  // must not see the press: it would select the track, and a second click
-  // would load it onto a deck.
-  const preview = usePreview();
-  const { subscribe } = preview;
-  const previewing = preview.active && preview.trackId === trackId;
-  const head = useRef<HTMLSpanElement>(null);
-  useEffect(() => {
-    if (!previewing || durationSec <= 0) return;
-    return subscribe((seconds) => {
-      const x = Math.min(Math.max(seconds / durationSec, 0), 1) * width;
-      if (head.current) head.current.style.transform = `translateX(${x}px)`;
-    });
-  }, [previewing, subscribe, durationSec, width]);
-
   const dpr = typeof window === "undefined" ? 1 : window.devicePixelRatio || 1;
   return (
-    <span
-      className={styles.preview}
-      style={{ width: `${width}px`, height: `${height}px` }}
-      title={tooltips ? "Click to preview from here" : undefined}
-      onMouseDown={(event) => {
-        if (event.button !== 0 || durationSec <= 0) return;
-        event.stopPropagation();
-        const x = event.clientX - event.currentTarget.getBoundingClientRect().left;
-        preview.play(trackId, Math.min(Math.max(x / width, 0), 1) * durationSec);
-      }}
-      onClick={(event) => event.stopPropagation()}
-      onDoubleClick={(event) => event.stopPropagation()}
-    >
+    <span className={styles.previewWave} style={{ width: `${width}px`, height: `${height}px` }}>
       <canvas
         ref={ref}
         width={Math.round(width * dpr)}
         height={Math.round(height * dpr)}
         style={{ width: `${width}px`, height: `${height}px` }}
+        data-preview-wave
         aria-hidden
       />
-      {previewing ? (
-        <>
-          <span ref={head} className={styles.head} aria-hidden />
-          {/* Over the left end of the waveform rather than beside it: a
-              narrower canvas would render the row's waveform again. */}
-          <button
-            type="button"
-            className={styles.stop}
-            aria-label="Stop preview"
-            title={tooltips ? "Stop preview (Esc)" : undefined}
-            onMouseDown={(event) => event.stopPropagation()}
-            onClick={(event) => {
-              event.stopPropagation();
-              preview.stop();
-            }}
-          />
-        </>
-      ) : null}
+      <PreviewPlayhead trackId={trackId} width={width} />
     </span>
   );
 });
+
+/**
+ * The preview's playhead and its stop button, over the row that holds it.
+ *
+ * Every row has one and all but one draw nothing. The line moves every frame
+ * by its own transform; the component itself re-renders only when the preview
+ * starts, stops or answers where it is.
+ */
+function PreviewPlayhead({ trackId, width }: { trackId: string; width: number }) {
+  const t = useTranslation();
+  const preview = usePreview();
+  const line = useRef<HTMLSpanElement>(null);
+  const mine = preview.playing && preview.trackId === trackId;
+
+  useEffect(() => {
+    if (!mine) return;
+    let frame = 0;
+    const draw = () => {
+      const el = line.current;
+      if (el && preview.durationMs > 0) {
+        const at = Math.min(previewPositionMs(preview) / preview.durationMs, 1);
+        el.style.transform = `translateX(${Math.round(at * width)}px)`;
+      }
+      frame = requestAnimationFrame(draw);
+    };
+    draw();
+    return () => cancelAnimationFrame(frame);
+  }, [mine, preview, width]);
+
+  if (!mine) return null;
+  return (
+    <>
+      <span ref={line} className={styles.previewHead} aria-hidden />
+      <button
+        type="button"
+        className={styles.previewStop}
+        title={t("Stop")}
+        aria-label={t("Stop")}
+        onMouseDown={(e) => e.stopPropagation()}
+        onClick={(e) => {
+          e.stopPropagation();
+          void stopPreview();
+        }}
+      />
+    </>
+  );
+}
+
+/**
+ * A click on a row's waveform: previews the track from there, without loading
+ * it onto a deck — rekordbox's `ListViewer::cellClickedWithLeftButton` into
+ * `PreviewComponent::clickWave`. Only a plain left click does: not the second
+ * of a double click (that loads the deck), not one with Shift or Command
+ * (Control on Windows and Linux), which extend the selection. A click on the
+ * stop button, or anywhere but the waveform, is not one.
+ *
+ * Returns whether it started a preview.
+ */
+export function previewFromClick(
+  e: ReactMouseEvent,
+  trackId: string,
+  durationSec: number,
+  hotCues: readonly RowCue[],
+): boolean {
+  if (e.button !== 0 || e.detail > 1 || e.shiftKey || e.metaKey || e.ctrlKey) return false;
+  const target = e.target as Element | null;
+  if (!target || target.closest("button")) return false;
+  const canvas = target.closest("[data-col=preview]")?.querySelector("canvas[data-preview-wave]");
+  if (!canvas) return false;
+  const box = canvas.getBoundingClientRect();
+  const durationMs = durationSec * 1000;
+  if (box.width <= 0 || durationMs <= 0) return false;
+  const at = previewClickMs(e.clientX - box.left, e.clientY - box.top, box.width, durationMs, hotCues);
+  void startPreview(trackId, at, durationMs);
+  return true;
+}

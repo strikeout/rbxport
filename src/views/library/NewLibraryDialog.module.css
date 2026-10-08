@@ -29,6 +29,7 @@
   color: var(--c-text-dim);
   overflow-wrap: anywhere;
 }
+.message { display: flex; flex-direction: column; margin: 12px 12px 26px; line-height: 1.5; text-align: center; }
 .error { margin: 0 12px 22px; color: var(--c-error); line-height: 1.5; }
 .buttons { display: flex; justify-content: center; gap: 64px; }
 .buttons button {

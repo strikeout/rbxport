@@ -6,6 +6,18 @@ USB export writes player libraries and audio copies to a device. These
 preferences apply to playlist export and Sync Manager; compatibility
 conversion also applies to individual track export.
 
+## What a selection exports
+
+- A playlist exports its tracks. An intelligent playlist exports the tracks
+  its rule admits at the time of export.
+- **Export Folder** exports every playlist and intelligent playlist under the
+  folder, at any depth. The device gets the folder, its subfolders (including
+  empty ones), and the folders above it, with each playlist inside its folder.
+- Sync Manager lists playlists, intelligent playlists, and folders. Ticking a
+  folder ticks every playlist and intelligent playlist under it. The list
+  updates when the library changes while the window is open; ticks on
+  deleted playlists are removed.
+
 ## Delete music outside playlists
 
 Off by default. When enabled, export removes RBXport-exported audio outside
@@ -21,6 +33,7 @@ and ALAC, is converted to the selected output format:
 | Format | Output |
 | --- | --- |
 | WAV (default) | 16-bit PCM, 44.1 kHz, stereo; resamples and reduces higher-resolution input. |
+| AIFF | 16-bit big-endian PCM, 44.1 kHz, stereo; lossless with the same audio data as WAV. |
 | MP3 | 320 kbps CBR, 44.1 kHz, stereo; smaller files with lossy compression. |
 
 Compatible MP3 and integer PCM WAV/AIFF at 44.1 or 48 kHz are copied as-is.
@@ -36,8 +49,9 @@ It updates device database/analysis paths and reuses unchanged conversions on
 later syncs. Changing format replaces the previous exported copy.
 
 Conversion errors stop publication. Surround audio is refused instead of
-dropping channels; WAV output beyond RIFF's 4 GB limit is refused.
-The app uses Symphonia, Rubato, PCM WAV writing, and bundled LAME. Running
+dropping channels; WAV and AIFF output beyond their 32-bit container limits is
+refused.
+The app uses Symphonia, Rubato, built-in PCM WAV/AIFF writing, and bundled LAME. Running
 export does not require a separate FFmpeg installation.
 
 ## Code and tests

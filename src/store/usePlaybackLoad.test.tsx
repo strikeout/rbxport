@@ -24,7 +24,7 @@ const emptyDeck = {
   loopInFrames: 0, loopOutFrames: 0, looping: false,
 };
 const emptyTick: Tick = {
-  a: { ...emptyDeck }, b: { ...emptyDeck }, p: { ...emptyDeck }, sampleRate: RATE,
+  a: { ...emptyDeck }, b: { ...emptyDeck }, sampleRate: RATE,
   peakLeft: 0, peakRight: 0, master: 1, reduction: 0, shiftsKey: true,
 };
 
@@ -57,10 +57,7 @@ function backend(): Backend {
     },
     deckUnload: done,
     deckPlay: () => { sent.push("play"); return done(); },
-    deckPlayAfter: (_deck: "a" | "b", ms: number, at?: number) => {
-      sent.push(at === undefined ? `play-after:${ms}` : `play-after:${ms}@${at}`);
-      return done();
-    },
+    deckPlayAfter: (_deck: "a" | "b", ms: number) => { sent.push(`play-after:${ms}`); return done(); },
     deckPause: () => { sent.push("pause"); return done(); },
     deckSeek: (_deck: "a" | "b", ms: number) => { sent.push(`seek:${ms}`); return done(); },
     deckTempo: () => done(),
@@ -132,28 +129,6 @@ it("defers cue and play until the newest rapidly selected track is ready", async
   finish(loads[2]!);
   await settle();
   expect(sent).toEqual(["seek:12000", "play"]);
-});
-
-it("moves the head and holds the start in one command on a ready deck", async () => {
-  finish(loads[0]!);
-  await settle();
-  sent = [];
-
-  act(() => deck.playAfter(250, 12));
-  await settle();
-  // One command: a separate seek could arrive after the start and cancel it.
-  expect(sent).toEqual(["play-after:250@12000"]);
-  expect(deck.position).toBe(12);
-});
-
-it("seeks before the held start when the deck is still loading", async () => {
-  act(() => deck.playAfter(250, 12));
-  await settle();
-  expect(sent).toEqual([]);
-
-  finish(loads[0]!);
-  await settle();
-  expect(sent).toEqual(["seek:12000", "play-after:250"]);
 });
 
 it("lets a cue release cancel play that was queued during loading", async () => {

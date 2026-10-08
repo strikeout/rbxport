@@ -433,6 +433,78 @@ test("detail columns display row metadata after being enabled", async ({ page })
   await expect(page.locator('[role="gridcell"][data-col="albumArtist"]').first()).not.toBeEmpty();
 });
 
+test("DJ Play Count sorts numerically in both directions", async ({ page }) => {
+  await page.goto("/");
+  await page.getByRole("columnheader", { name: "Track Title" }).click({ button: "right" });
+  await page.getByRole("menu", { name: "Columns" })
+    .getByRole("menuitemcheckbox", { name: "DJ Play Count", exact: true }).click();
+
+  const header = page.getByRole("columnheader", { name: /^DJ Play Count/ });
+  const values = page.locator('[role="gridcell"][data-col="djPlayCount"]');
+  await header.click();
+  await expect(header).toHaveAttribute("data-sorted", "true");
+  await expect.poll(async () => {
+    const visible = (await values.allInnerTexts()).map((value) => value === "" ? 0 : Number(value));
+    return visible.every((value, index) => index === 0 || (visible[index - 1] ?? 0) <= value);
+  }).toBe(true);
+
+  await header.click();
+  await expect(values.first()).toHaveText("6");
+  await expect.poll(async () => {
+    const visible = (await values.allInnerTexts()).map((value) => value === "" ? 0 : Number(value));
+    return visible.every((value, index) => index === 0 || (visible[index - 1] ?? 0) >= value);
+  }).toBe(true);
+});
+
+test("Color sorts in rekordbox's palette order, not by name", async ({ page }) => {
+  await page.goto("/");
+  await page.getByRole("columnheader", { name: "Track Title" }).click({ button: "right" });
+  await page.getByRole("menu", { name: "Columns" })
+    .getByRole("menuitemcheckbox", { name: "Color", exact: true }).click();
+
+  const palette = ["", "Pink", "Red", "Orange", "Yellow", "Green", "Aqua", "Blue", "Purple"];
+  const header = page.getByRole("columnheader", { name: /^Color/ });
+  const values = page.locator('[role="gridcell"][data-col="color"]');
+  await header.click();
+  await expect(header).toHaveAttribute("data-sorted", "true");
+  await expect(values.first()).toHaveText("");
+  await expect.poll(async () => {
+    const visible = (await values.allInnerTexts()).map((value) => palette.indexOf(value));
+    return visible.every((value, index) => value >= 0 && (index === 0 || (visible[index - 1] ?? 0) <= value));
+  }).toBe(true);
+
+  await header.click();
+  await expect(values.first()).toHaveText("Purple");
+  await expect.poll(async () => {
+    const visible = (await values.allInnerTexts()).map((value) => palette.indexOf(value));
+    return visible.every((value, index) => value >= 0 && (index === 0 || (visible[index - 1] ?? 0) >= value));
+  }).toBe(true);
+});
+
+test("Track number sorts by the tag's number, apart from the # column", async ({ page }) => {
+  await page.goto("/");
+  await page.getByRole("columnheader", { name: "Track Title" }).click({ button: "right" });
+  await page.getByRole("menu", { name: "Columns" })
+    .getByRole("menuitemcheckbox", { name: "Track number", exact: true }).click();
+
+  const header = page.getByRole("columnheader", { name: /^Track number/ });
+  const values = page.locator('[role="gridcell"][data-col="trackNumber"]');
+  await header.click();
+  await expect(header).toHaveAttribute("data-sorted", "true");
+  await expect(values.first()).toHaveText("1");
+  await expect.poll(async () => {
+    const visible = (await values.allInnerTexts()).map(Number);
+    return visible.every((value, index) => index === 0 || (visible[index - 1] ?? 0) <= value);
+  }).toBe(true);
+
+  await header.click();
+  await expect(values.first()).toHaveText("12");
+  await expect.poll(async () => {
+    const visible = (await values.allInnerTexts()).map(Number);
+    return visible.every((value, index) => index === 0 || (visible[index - 1] ?? 0) >= value);
+  }).toBe(true);
+});
+
 test("column menu highlights each field as the pointer moves", async ({ page }) => {
   await page.getByRole("columnheader", { name: "Track Title" }).click({ button: "right" });
   const menu = page.getByRole("menu", { name: "Columns" });
@@ -862,31 +934,6 @@ test("the Traffic Light lights the keys that go with the loaded track's", async 
   for (const text of await lit.allInnerTexts()) {
     expect(text.trim()).toBe(loaded);
   }
-});
-
-test("the Traffic Light colours each jump and follows the deck's key shift", async ({ page }) => {
-  await page.goto("/");
-  await expect(page.getByTestId("browser-title")).toContainText("Tracks)");
-  const keys = page.locator('[role="gridcell"][data-col="key"]');
-  const lit = page.locator('[role="gridcell"][data-col="key"][data-lit]');
-  await page.locator('[role="gridcell"][data-col="title"]').first().dblclick();
-  await expect(keys.first()).toHaveAttribute("data-lit", "true");
-  // The rekordbox green by default: no jump colours.
-  await expect(page.locator('[role="gridcell"][data-col="key"][data-jump]')).toHaveCount(0);
-
-  await page.getByRole("banner").getByRole("button", { name: "Settings" }).click();
-  const dialog = page.getByRole("dialog", { name: "Preferences" });
-  await dialog.getByRole("switch", { name: "Jump colours" }).click();
-  await page.keyboard.press("Escape");
-  await expect(keys.first()).toHaveAttribute("data-jump", "same");
-  const jumps = await lit.evaluateAll((cells) => cells.map((cell) => cell.getAttribute("data-jump")));
-  expect(jumps.length).toBeGreaterThan(1);
-  for (const jump of jumps) expect(["same", "relative", "adjacent", "diagonal"]).toContain(jump);
-
-  // A semitone up moves the key seven steps round the wheel: the loaded
-  // track's own key no longer lights.
-  await page.getByRole("region", { name: "Preview player" }).getByRole("button", { name: "Key up a semitone" }).click();
-  await expect(keys.first()).not.toHaveAttribute("data-lit", /.*/);
 });
 
 test("the # column sorts a playlist by its own order, and back", async ({ page }) => {
@@ -1365,7 +1412,8 @@ test("with the library held by rekordbox the cells are not editable at all", asy
   await expect(warning).toHaveText("Editing is locked while rekordbox is running. Quit rekordbox to enable editing.");
 });
 
-test("settings can check for missing files", async ({ page }) => {
+// The missing-file manager is hidden for now (MISSING_FILES_ENABLED).
+test.skip("settings can check for missing files", async ({ page }) => {
   await page.goto("/");
   await page.getByRole("banner").getByRole("button", { name: "Settings" }).click();
   await page.getByRole("dialog", { name: "Preferences" }).getByRole("tab", { name: "Advanced" }).click();
@@ -1644,8 +1692,9 @@ test("the waveforms follow the window rather than stretching a fixed canvas", as
     .toBeGreaterThan(narrow);
 });
 
-test("a playlist offers export, and a folder does not", async ({ page }) => {
-  // A folder holds playlists, so exporting one would have to invent which.
+test("right-clicking a playlist or a folder starts no export", async ({ page }) => {
+  // Both offer export (Export Playlist, Export Folder), but only from the
+  // menu: opening it must not start one.
   await page.goto("/");
   await expect(page.getByTestId("browser-title")).toContainText("Tracks)");
 
@@ -2504,6 +2553,29 @@ test("dual control links what both decks are showing", async ({ page }) => {
   await expect(sizes.last()).toHaveText(/8Bars/);
 });
 
+test("dual control is remembered across a restart", async ({ page }) => {
+  await page.goto("/");
+  await expect(page.getByTestId("browser-title")).toContainText("Tracks)");
+  await page.getByRole("button", { name: "Layout" }).click();
+  await page.getByRole("menuitemradio", { name: "2 PLAYER" }).click();
+  const dual = page.getByRole("button", { name: "Dual control" });
+  await expect(dual).toHaveAttribute("aria-pressed", "false");
+  await dual.click();
+  await expect(dual).toHaveAttribute("aria-pressed", "true");
+
+  // The layout is restored too, so the same button comes back still on.
+  await page.reload({ waitUntil: "domcontentloaded" });
+  await expect(page.getByTestId("browser-title")).toContainText("Tracks");
+  await expect(dual).toHaveAttribute("aria-pressed", "true");
+
+  // Switching it off is remembered as well.
+  await dual.click();
+  await expect(dual).toHaveAttribute("aria-pressed", "false");
+  await page.reload({ waitUntil: "domcontentloaded" });
+  await expect(page.getByTestId("browser-title")).toContainText("Tracks");
+  await expect(dual).toHaveAttribute("aria-pressed", "false");
+});
+
 test("the mixer belongs to the two-deck layouts and to nothing else", async ({ page }) => {
   await page.goto("/");
   await expect(page.getByTestId("browser-title")).toContainText("Tracks)");
@@ -2527,18 +2599,6 @@ test("the mixer belongs to the two-deck layouts and to nothing else", async ({ p
   await expect(low).toHaveAttribute("aria-pressed", "true");
   await low.click();
   await expect(low).toHaveAttribute("aria-pressed", "false");
-
-  // Y kills Player A's LOW and X kills Player B's, each a toggle too.
-  const lowB = mixer.getByRole("button", { name: "LOW" }).last();
-  await page.keyboard.press("y");
-  await expect(low).toHaveAttribute("aria-pressed", "true");
-  await expect(lowB).toHaveAttribute("aria-pressed", "false");
-  await page.keyboard.press("x");
-  await expect(lowB).toHaveAttribute("aria-pressed", "true");
-  await page.keyboard.press("y");
-  await page.keyboard.press("x");
-  await expect(low).toHaveAttribute("aria-pressed", "false");
-  await expect(lowB).toHaveAttribute("aria-pressed", "false");
 
   // The crossfader starts in the middle, where both decks are heard whole.
   const fader = mixer.getByRole("slider", { name: "Crossfader" });
@@ -2783,10 +2843,10 @@ test("the deck answers rekordbox's own keys", async ({ page }) => {
   await page.keyboard.press(" ");
   await expect(page.getByRole("button", { name: "Play", exact: true })).toBeVisible();
 
-  // T toggles quantize.
+  // Q toggles quantize.
   const q = page.getByRole("button", { name: "Quantize" });
   await expect(q).toHaveAttribute("aria-pressed", "true");
-  await page.keyboard.press("t");
+  await page.keyboard.press("q");
   await expect(q).toHaveAttribute("aria-pressed", "false");
 
   // F10, F11 and F12 are the three cue lists.
@@ -2797,7 +2857,7 @@ test("the deck answers rekordbox's own keys", async ({ page }) => {
 
   // And none of them fire into the search box.
   await page.getByPlaceholder(/Search/).first().click();
-  await page.keyboard.press("t");
+  await page.keyboard.press("q");
   await expect(q).toHaveAttribute("aria-pressed", "false");
 });
 

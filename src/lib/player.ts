@@ -108,6 +108,52 @@ export function jumpStepSeconds(size: JumpSize, bpmX100: number): number {
   return size.beats > 0 ? jumpSeconds(size.beats, bpmX100) : FINE_JUMP_SECONDS;
 }
 
+/** Pixels of wheel travel that make one zoom step: about one mouse notch. */
+export const WHEEL_STEP_PX = 100;
+/** After a step, further wheel input is ignored this long (ms), so a trackpad's
+ * stream and its inertia tail do not run through every zoom level. */
+export const WHEEL_COOLDOWN_MS = 150;
+/** A pause this long (ms) starts a new gesture and drops any partial travel. */
+export const WHEEL_IDLE_MS = 250;
+
+/**
+ * Turns a stream of wheel events into zoom steps.
+ *
+ * A mouse notch is one event of about a hundred pixels; a trackpad swipe is
+ * dozens of small events plus an inertia tail. Distance is accumulated to a
+ * step and each step is followed by a short cooldown, so a swipe is a step or
+ * two rather than the whole zoom range. Whole-step events (mouse notches)
+ * always step. Returns -1 (zoom in), 1 (zoom out)
+ * or 0 (no step yet).
+ */
+export function createWheelZoomGate() {
+  let travel = 0;
+  let lastEvent = Number.NEGATIVE_INFINITY;
+  let lastStep = Number.NEGATIVE_INFINITY;
+  return (deltaPx: number, now: number): -1 | 0 | 1 => {
+    if (deltaPx === 0 || !Number.isFinite(deltaPx)) return 0;
+    if (now - lastEvent > WHEEL_IDLE_MS) travel = 0;
+    lastEvent = now;
+    // Reversing direction discards travel in the old one.
+    if (travel !== 0 && Math.sign(travel) !== Math.sign(deltaPx)) travel = 0;
+    // A single event of a full step or more is a discrete mouse notch: it is
+    // a deliberate click of the wheel, so it always steps and is never held
+    // back by the cooldown that tames a trackpad's stream of small deltas.
+    if (Math.abs(deltaPx) >= WHEEL_STEP_PX) {
+      travel = 0;
+      lastStep = now;
+      return deltaPx > 0 ? 1 : -1;
+    }
+    if (now - lastStep < WHEEL_COOLDOWN_MS) return 0;
+    travel += deltaPx;
+    if (Math.abs(travel) < WHEEL_STEP_PX) return 0;
+    const direction = travel > 0 ? 1 : -1;
+    travel = 0;
+    lastStep = now;
+    return direction;
+  };
+}
+
 /**
  * The zoom a wheel gesture lands on.
  *
@@ -830,6 +876,55 @@ export function beatLoopRange(
   const target = at + beats;
   const end = onBeat && Number.isInteger(beats) && target < times.length ? (times[target] ?? start) : start + beats * period;
   return end > start ? [start, end] : null;
+}
+
+/** The shortest and the longest beat loop, in beats. */
+export const LOOP_BEATS_MIN = 0.25;
+export const LOOP_BEATS_MAX = 32;
+
+export function clampLoopBeats(beats: number): number {
+  return Math.min(Math.max(beats, LOOP_BEATS_MIN), LOOP_BEATS_MAX);
+}
+
+/** The beat loop length as rekordbox writes it: "1/4", "1/2", "1", "2" and up. */
+export function loopBeatsLabel(beats: number): string {
+  return beats < 1 ? `1/${Math.round(1 / beats)}` : String(beats);
+}
+
+/**
+ * The loop `fromMs`–`toMs` at `factor` times its length, from the same in
+ * point. A beat loop of `beats` stays on the grid as `beatLoopRange` counts
+ * it, and `beats` changes with it. A loop of another length, such as a
+ * manual loop, scales in time and keeps `beats`. The new length stays
+ * within LOOP_BEATS_MIN and LOOP_BEATS_MAX beats. Null with no grid.
+ */
+export function resizedLoopRange(
+  grid: BeatGrid,
+  fromMs: number,
+  toMs: number,
+  beats: number,
+  factor: number,
+): { range: [number, number]; beats: number } | null {
+  const asBeatLoop = beatLoopRange(grid, null, fromMs, beats);
+  if (asBeatLoop && Math.abs(asBeatLoop[1] - toMs) < 1) {
+    const next = clampLoopBeats(beats * factor);
+    const range = beatLoopRange(grid, null, fromMs, next);
+    return range && { range, beats: next };
+  }
+  const shortest = beatLoopRange(grid, null, fromMs, LOOP_BEATS_MIN);
+  const longest = beatLoopRange(grid, null, fromMs, LOOP_BEATS_MAX);
+  if (!shortest || !longest) return null;
+  const length = Math.min(Math.max((toMs - fromMs) * factor, shortest[1] - fromMs), longest[1] - fromMs);
+  return { range: [fromMs, fromMs + length], beats };
+}
+
+/**
+ * The head after its loop changes to `from`–`to`. A head at or past the
+ * end goes back by whole loops, so it keeps its place in the beat. A head
+ * before the end stays.
+ */
+export function wrapIntoLoop(head: number, from: number, to: number): number {
+  return head >= to && to > from ? from + ((head - from) % (to - from)) : head;
 }
 
 /**

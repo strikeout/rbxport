@@ -29,9 +29,7 @@ export type Action =
   // The deck. Every key below is rekordbox's own, transcribed from the Export
   // preset in `KeyMappings/rekordbox_0000000000030.mappings` — the key map the
   // mode we clone ships with, not a guess at what feels natural. The same
-  // actions with shift are Player B's. Four keys differ from the preset: the
-  // EQ kills below took Q, A, S and X, so Quantize is on T, Memory Cue 1 on
-  // E, Memory Cue 2 on U and Delete Memory Cue on V.
+  // actions with shift are Player B's.
   | "playPause"
   | "cue"
   | "quantize"
@@ -41,8 +39,8 @@ export type Action =
   | "showHotCues"
   | "showInfo"
   // The MEMORY cluster: M stores the cue point as a memory cue, B and N call
-  // the one before and after the playhead, V deletes the one it is on, and
-  // E, U and D to ; call the first ten by number.
+  // the one before and after the playhead, X deletes the one it is on, and
+  // A to ; call the first ten by number.
   | "memoryCue"
   | "previousMemoryCue"
   | "nextMemoryCue"
@@ -72,13 +70,26 @@ export type Action =
   | "loopDouble"
   // The hot cue pads: the Export preset binds `1`, `2` and `3` to `Set Hot
   // Cue A` to `C` and `command + 1`-`3` to `Clear Hot Cue A` to `C`, and
-  // nothing to D onwards.
+  // nothing to D onwards. rekordbox's command table does carry `Set Hot Cue
+  // D`-`P` and `Clear Hot Cue D`-`P` labels [OBS: strings in the rekordbox 7
+  // binary], so D to H are this app's own rows, unbound until the Keyboard
+  // pane assigns them.
   | "hotCueA"
   | "hotCueB"
   | "hotCueC"
+  | "hotCueD"
+  | "hotCueE"
+  | "hotCueF"
+  | "hotCueG"
+  | "hotCueH"
   | "clearHotCueA"
   | "clearHotCueB"
   | "clearHotCueC"
+  | "clearHotCueD"
+  | "clearHotCueE"
+  | "clearHotCueF"
+  | "clearHotCueG"
+  | "clearHotCueH"
   // The tempo: F1 SYNC, F2 MASTER TEMPO, F3 resets the slider, F6 and F7
   // step it, F9 changes the metronome's sound.
   | "sync"
@@ -100,20 +111,31 @@ export type Action =
   | "shiftGridLeft"
   | "shiftGridRight"
   | "shiftGridToCenter"
-  // The mixer's EQ kills. They are this app's own, not the preset's: Y, A
-  // and Q are Player A's LOW, MID and HIGH, and X, S and W are Player B's.
-  | "killLow"
-  | "killMid"
-  | "killHigh";
+  // The mixer's kill buttons, one per band and deck. rekordbox's Export preset
+  // binds nothing to them [OBS: no EQ command in keymap.ts], so these rows are
+  // this app's own and start unbound; the Keyboard pane assigns them.
+  | "eqKillLow"
+  | "eqKillMid"
+  | "eqKillHigh";
+
+/** The mixer band an EQ kill action toggles, or `null` for any other action. */
+export function eqKillBand(action: Action): "low" | "mid" | "high" | null {
+  switch (action) {
+    case "eqKillLow": return "low";
+    case "eqKillMid": return "mid";
+    case "eqKillHigh": return "high";
+    default: return null;
+  }
+}
 
 /**
  * The pad a hot cue action names, and whether it clears rather than sets.
  * `null` for any other action.
  */
 export function hotCuePad(action: Action): { letter: string; clear: boolean } | null {
-  const set = /^hotCue([A-C])$/.exec(action);
+  const set = /^hotCue([A-H])$/.exec(action);
   if (set) return { letter: set[1] ?? "", clear: false };
-  const clear = /^clearHotCue([A-C])$/.exec(action);
+  const clear = /^clearHotCue([A-H])$/.exec(action);
   if (clear) return { letter: clear[1] ?? "", clear: true };
   return null;
 }
@@ -380,7 +402,7 @@ export interface Binding {
 /** Player A's rows: Player B's are the same with shift, `31xx` for `30xx`. */
 const PLAYER_A: readonly Omit<Binding, "id" | "group" | "deck">[] = [
   { label: "Play/Pause", chord: { key: " " }, action: "playPause", command: "3006" },
-  { label: "Quantize", chord: { key: "t" }, action: "quantize", command: "301c" },
+  { label: "Quantize", chord: { key: "q" }, action: "quantize", command: "301c" },
   { label: "Cue", chord: { key: "c" }, action: "cue", command: "3007" },
   { label: "Memory Cue", chord: { key: "m" }, action: "memoryCue", command: "3024" },
   { label: "Loop In", chord: { key: "i" }, action: "loopIn", command: "300a" },
@@ -402,11 +424,11 @@ const PLAYER_A: readonly Omit<Binding, "id" | "group" | "deck">[] = [
   { label: "Clear Hot Cue C", chord: { key: "3", metaKey: true }, action: "clearHotCueC", command: "3023" },
   { label: "Call Next Memory Cue", chord: { key: "n" }, action: "nextMemoryCue", command: "3039" },
   { label: "Call Previous Memory Cue", chord: { key: "b" }, action: "previousMemoryCue", command: "303a" },
-  { label: "Delete Memory Cue", chord: { key: "v" }, action: "deleteMemoryCue", command: "303b" },
+  { label: "Delete Memory Cue", chord: { key: "x" }, action: "deleteMemoryCue", command: "303b" },
   { label: "Jump Forward", chord: { key: "ArrowRight" }, action: "jumpForward", command: "3008" },
   { label: "Jump Reverse", chord: { key: "ArrowLeft" }, action: "jumpBack", command: "3009" },
-  { label: "Memory Cue 1", chord: { key: "e" }, action: "callMemoryCue1", command: "3025" },
-  { label: "Memory Cue 2", chord: { key: "u" }, action: "callMemoryCue2", command: "3026" },
+  { label: "Memory Cue 1", chord: { key: "a" }, action: "callMemoryCue1", command: "3025" },
+  { label: "Memory Cue 2", chord: { key: "s" }, action: "callMemoryCue2", command: "3026" },
   { label: "Memory Cue 3", chord: { key: "d" }, action: "callMemoryCue3", command: "3027" },
   { label: "Memory Cue 4", chord: { key: "f" }, action: "callMemoryCue4", command: "3028" },
   { label: "Memory Cue 5", chord: { key: "g" }, action: "callMemoryCue5", command: "3029" },
@@ -468,14 +490,38 @@ export const BINDINGS: readonly Binding[] = [
   ...PLAYER_A.filter((row) =>
     row.action !== "metronomeSound" && row.action !== "adjustGrid" && hotCuePad(row.action ?? "cue")?.clear !== true)
     .map(playerB),
-  // The EQ kills, high to low as the strip draws them. Player B's are a
-  // column to the right, not shift.
-  { id: "killHigh", group: "Player A", deck: "a", label: "High Kill", chord: { key: "q" }, action: "killHigh", pane: "Player A" },
-  { id: "killMid", group: "Player A", deck: "a", label: "Mid Kill", chord: { key: "a" }, action: "killMid", pane: "Player A" },
-  { id: "killLow", group: "Player A", deck: "a", label: "Low Kill", chord: { key: "y" }, action: "killLow", pane: "Player A" },
-  { id: "b.killHigh", group: "Player B", deck: "b", label: "High Kill", chord: { key: "w" }, action: "killHigh", pane: "Player B" },
-  { id: "b.killMid", group: "Player B", deck: "b", label: "Mid Kill", chord: { key: "s" }, action: "killMid", pane: "Player B" },
-  { id: "b.killLow", group: "Player B", deck: "b", label: "Low Kill", chord: { key: "x" }, action: "killLow", pane: "Player B" },
+  // The mixer's kill buttons: this app's own, unbound until the person picks a
+  // key (an empty chord matches nothing).
+  ...(["a", "b"] as const).flatMap((deck): Binding[] =>
+    ([["Low", "eqKillLow"], ["Mid", "eqKillMid"], ["High", "eqKillHigh"]] as const).map(([band, action]) => ({
+      id: `${deck}.${action}`,
+      group: deck === "a" ? "Player A" : "Player B",
+      label: `${band} Kill`,
+      chord: { key: "" },
+      action,
+      deck,
+      pane: deck === "a" ? "Player A" : "Player B",
+    }))),
+  // Hot cue pads D to H, and Player B's clears: this app's own and unbound,
+  // since the Export preset binds nothing to them. The person picks the keys.
+  ...(["a", "b"] as const).flatMap((deck): Binding[] => {
+    const group = deck === "a" ? "Player A" : "Player B";
+    const own = (kind: "hotCue" | "clearHotCue", letter: string): Binding => ({
+      id: `${deck === "a" ? "" : "b."}${kind}${letter}`,
+      group,
+      label: `${kind === "hotCue" ? "Set" : "Clear"} Hot Cue ${letter}`,
+      chord: { key: "" },
+      action: `${kind}${letter}` as Action,
+      deck,
+      pane: group,
+    });
+    const letters = ["D", "E", "F", "G", "H"];
+    return [
+      ...letters.map((letter) => own("hotCue", letter)),
+      ...(deck === "b" ? ["A", "B", "C"] : []).map((letter) => own("clearHotCue", letter)),
+      ...letters.map((letter) => own("clearHotCue", letter)),
+    ];
+  }),
   { id: "volumeUp", group: "General", label: "Volume", chord: { key: "F12", metaKey: true }, action: "volumeUp", command: "3003" },
   { id: "volumeDown", group: "General", label: "Volume Down", chord: { key: "F11", metaKey: true }, action: "volumeDown", command: "3004" },
   { id: "mute", group: "General", label: "Mute", chord: { key: "F10", metaKey: true }, action: "mute", command: "3005" },

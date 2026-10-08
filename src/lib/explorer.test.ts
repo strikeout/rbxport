@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  EXPLORER_ROOT_ID, explorerId, explorerNodes, explorerPath, isLooseId, joinPath, moreNote,
+  EXPLORER_ROOT_ID, explorerId, explorerNodes, explorerPath, hasLooseId, importLoose, isLooseId, joinPath, moreNote,
 } from "./explorer";
 
 const ROOTS = [
@@ -22,6 +22,10 @@ describe("explorer ids", () => {
   it("tells a loose file's row from a track's", () => {
     expect(isLooseId("file:/Users/x/Music/a.mp3")).toBe(true);
     expect(isLooseId("100001")).toBe(false);
+    // The menu follows the rows: an imported file is a track in the Explorer too.
+    expect(hasLooseId(["100001", "100002"])).toBe(false);
+    expect(hasLooseId(["100001", "file:/m/a.flac"])).toBe(true);
+    expect(hasLooseId([])).toBe(false);
   });
 });
 
@@ -113,5 +117,34 @@ describe("a folder cut at the backend's cap", () => {
     // Not a folder: nothing to open, and no path to open.
     expect(note?.lazy).toBeUndefined();
     expect(moreNote(1)).toBe("1 more folder not shown");
+  });
+});
+
+describe("importLoose", () => {
+  it("imports only the loose files, and stands their tracks in for them", async () => {
+    const asked: string[][] = [];
+    const out = await importLoose(["7", "file:/m/a.flac", "file:/m/b.mp3", "9"], (paths) => {
+      asked.push(paths);
+      return Promise.resolve({
+        imported: 1,
+        skipped: [],
+        tracks: [{ id: "100", title: "a" }],
+        existing: [{ id: "9", title: "b" }],
+      });
+    });
+    expect(asked).toEqual([["/m/a.flac", "/m/b.mp3"]]);
+    // A file the library already held is not added twice.
+    expect(out.ids).toEqual(["7", "9", "100"]);
+    expect(out.report?.imported).toBe(1);
+  });
+
+  it("asks for no import when every row is a track", async () => {
+    let called = false;
+    const out = await importLoose(["1", "2"], () => {
+      called = true;
+      return Promise.resolve({ imported: 0, skipped: [], tracks: [], existing: [] });
+    });
+    expect(called).toBe(false);
+    expect(out).toEqual({ ids: ["1", "2"], report: null });
   });
 });

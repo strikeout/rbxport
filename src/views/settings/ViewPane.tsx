@@ -258,11 +258,6 @@ export function ViewPane({ tab, onResetColumns, onResetLayout }: ViewPaneProps) 
           ]}
           onChange={(trafficLight) => set({ trafficLight })}
         />
-        <Toggle
-          label="Jump colours"
-          checked={view.trafficLightJumpColours}
-          onChange={(trafficLightJumpColours) => set({ trafficLightJumpColours })}
-        />
       </Section>
     </>
   );

@@ -2,6 +2,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { DeckId, GridEdit, GridEditOptions, GridState } from "@/ipc/types";
 import { getBackend } from "@/ipc/client";
+import { useTranslation } from "@/i18n";
 import { SHIFT_MS, HELD_SHIFT_MS, tapTempo, tapTimeout, withTap } from "@/lib/gridEdit";
 
 export interface GridEditorDeck {
@@ -44,11 +45,22 @@ export interface GridEditorActions {
   toggleLock: () => void;
 }
 function describe(error: unknown): string {
+  // Tauri rejects with a bare string when a call never reaches a command
+  // (unknown command, refused permission, arguments it cannot read); saying
+  // it beats a generic failure nobody can trace (#107).
+  if (typeof error === "string" && error.trim()) return error;
   if (typeof error === "object" && error !== null && "message" in error && typeof error.message === "string" && error.message.trim()) return error.message;
   return "The beat grid could not be saved.";
 }
 export function useGridEditor(deck: GridEditorDeck): GridEditorActions {
   const { trackId, deck: deckId, state, setState, positionMs, readOnly, onError, isDynamicFrom, confirmDynamic, onNudge } = deck;
+  const t = useTranslation();
+  // The playhead can sit up to five seconds before the track starts, but the
+  // grid has no time before zero and the command takes unsigned
+  // milliseconds: a negative time was refused before it reached the backend,
+  // so the edit failed with no reason. The start of the track is the nearest
+  // time the grid has.
+  const playheadMs = useCallback(() => Math.max(0, Math.round(positionMs())), [positionMs]);
   const hasGrid = trackId !== null && state !== null && state.beats > 0;
   const canEdit = hasGrid && !readOnly && !state.locked;
   const [fromMs, setFromMs] = useState<number | null>(null);
@@ -105,14 +117,21 @@ export function useGridEditor(deck: GridEditorDeck): GridEditorActions {
     if (transaction) options.transaction = transaction;
     run(async edits => {
       if ((change.kind === "stretch" || change.kind === "tempo") && isDynamicFrom?.(boundary)) {
-        const allowed = await (confirmDynamic?.() ?? window.confirm("This section has tempo changes. Replace them with a constant tempo?"));
+        // The backend's dialog, not window.confirm. tauri-plugin-dialog's
+        // init script replaces window.confirm with a call to a
+        // `plugin:dialog|confirm` command that 2.7 no longer registers, so it
+        // rejected with a bare string and no dialog was ever drawn: on Linux
+        // every tempo edit over tempo changes failed with "could not be
+        // saved" (#107; the macOS edit that did nothing in #86 fits too).
+        const question = t("This section has tempo changes. Replace them with a constant tempo?");
+        const allowed = await (confirmDynamic?.() ?? (await getBackend()).confirm(question));
         if (!allowed) return state;
         options.allowDynamic = true;
       }
       return edits.gridEdit(trackId, change, options);
     }, after);
-  }, [canEdit, trackId, deckId, fromMs, run, isDynamicFrom, confirmDynamic, state, deck.durationMs]);
-  const mark = useCallback(() => { if (fromMs === null) edit({ kind: "downbeat", timeMs: Math.round(positionMs()) }); }, [edit, fromMs, positionMs]);
+  }, [canEdit, trackId, deckId, fromMs, run, isDynamicFrom, confirmDynamic, state, deck.durationMs, t]);
+  const mark = useCallback(() => { if (fromMs === null) edit({ kind: "downbeat", timeMs: playheadMs() }); }, [edit, fromMs, playheadMs]);
   const shift = useCallback((direction: -1 | 1, held = false) => {
     if (fromMs !== null || !canEdit || trackId === null) return;
     const ms = direction * (held ? HELD_SHIFT_MS : SHIFT_MS);
@@ -133,18 +152,18 @@ export function useGridEditor(deck: GridEditorDeck): GridEditorActions {
     }, undefined, () => { if (!nudgeQueued.current) setNudging(false); });
   }, [fromMs, canEdit, trackId, onNudge, deck.durationMs, run]);
   const stretch = useCallback((direction: -1 | 1, held = false) => {
-    edit({ kind: "stretch", byMs: -direction * (held ? HELD_SHIFT_MS : SHIFT_MS), timeMs: Math.round(positionMs()) });
-  }, [edit, positionMs]);
+    edit({ kind: "stretch", byMs: -direction * (held ? HELD_SHIFT_MS : SHIFT_MS), timeMs: playheadMs() });
+  }, [edit, playheadMs]);
   const double = useCallback(() => edit({ kind: "double" }), [edit]);
   const halve = useCallback(() => edit({ kind: "halve" }), [edit]);
   const adjustAll = useCallback(() => { if (canEdit) { cancelTaps(); setFromMs(null); } }, [canEdit, cancelTaps]);
   const adjustFrom = useCallback(() => {
     if (!canEdit) return;
     cancelTaps();
-    const at = Math.round(positionMs());
+    const at = playheadMs();
     edit({ kind: "align", timeMs: at }, at, undefined, () => setFromMs(at));
-  }, [canEdit, cancelTaps, positionMs, edit]);
-  const align = useCallback(() => { if (fromMs === null) edit({ kind: "align", timeMs: Math.round(positionMs()) }); }, [edit, fromMs, positionMs]);
+  }, [canEdit, cancelTaps, playheadMs, edit]);
+  const align = useCallback(() => { if (fromMs === null) edit({ kind: "align", timeMs: playheadMs() }); }, [edit, fromMs, playheadMs]);
   const setBpm = useCallback((value: string) => {
     const bpm = Number(value);
     if (!value.trim() || !Number.isFinite(bpm) || bpm < 40 || bpm > 499) { onError?.("Enter a BPM from 40 to 499."); return; }
@@ -153,14 +172,14 @@ export function useGridEditor(deck: GridEditorDeck): GridEditorActions {
   const tap = useCallback(() => {
     if (!canEdit || fromMs !== null) return;
     const next = withTap(tapsRef.current, performance.now());
-    if (next.length === 1) { tapAnchor.current = Math.round(positionMs()); tapRun.current++; }
+    if (next.length === 1) { tapAnchor.current = playheadMs(); tapRun.current++; }
     tapsRef.current = next;
     setTaps(next);
     if (tapTimer.current) clearTimeout(tapTimer.current);
     if (next.length) tapTimer.current = setTimeout(cancelTaps, tapTimeout(next));
     const bpmX100 = tapTempo(next);
     if (bpmX100 !== null) edit({ kind: "tap", bpm: 60_000 * (next.length - 1) / (next[next.length - 1]! - next[0]!), anchorMs: tapAnchor.current }, null, `${session.current}:${deckId}:${trackId}:${tapRun.current}`);
-  }, [canEdit, fromMs, positionMs, cancelTaps, edit, deckId, trackId]);
+  }, [canEdit, fromMs, playheadMs, cancelTaps, edit, deckId, trackId]);
   const undo = useCallback(() => { if (hasGrid && !readOnly && trackId !== null) { cancelTaps(); run(edits => edits.gridUndo(trackId, deckId)); } }, [hasGrid, readOnly, trackId, deckId, run, cancelTaps]);
   const redo = useCallback(() => { if (hasGrid && !readOnly && trackId !== null) { cancelTaps(); run(edits => edits.gridRedo(trackId, deckId)); } }, [hasGrid, readOnly, trackId, deckId, run, cancelTaps]);
   const toggleLock = useCallback(() => {

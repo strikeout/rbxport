@@ -195,6 +195,18 @@ test("the control row loops the chosen number of beats, and the steps resize it"
   // IN waits for its OUT, lit.
   await row.getByRole("button", { name: "Loop in" }).click();
   await expect(row.getByRole("button", { name: "Loop in" })).toHaveAttribute("data-on", "true");
+  // A change of mode drops the waiting IN.
+  await row.getByRole("button", { name: "AU", exact: true }).click();
+  await expect(row.getByRole("button", { name: "Loop in" })).not.toHaveAttribute("data-on");
+  await manual.click();
+
+  // OUT, with the head moved on from IN, plays the loop between them.
+  await page.getByRole("group", { name: "Deck A transport" }).getByRole("button", { name: "Play", exact: true }).click();
+  await row.getByRole("button", { name: "Loop in" }).click();
+  await page.waitForTimeout(1_500);
+  await row.getByRole("button", { name: "Loop out" }).click();
+  await expect(exit).toHaveAttribute("aria-pressed", "true");
+  await expect(a.getByTestId("player-overview").locator('[class*="loopBand"][data-active]')).toHaveCount(1);
 });
 
 test("deck B reads the other way up, and its detail meets deck A's at the centre line", async ({ page }) => {
@@ -433,14 +445,14 @@ test("a synced deck with Q on stays on the master's beat after jumps and in a lo
   for (let n = 0; n < 8; n++) await forward.last().click();
   await expect.poll(offBeat, { timeout: 3000 }).toBeLessThan(0.012);
 
-  // A hand-made loop on B: IN and OUT go on whole beats, so B is on the beat
-  // through each repeat of the loop.
-  const row = b.getByTestId("player-controls");
-  await row.getByRole("button", { name: "MA", exact: true }).click();
-  await row.getByRole("button", { name: "Loop in" }).click();
+  // A hand-made loop on B, from Player B's LOOP IN and LOOP OUT keys. IN and
+  // OUT go on whole beats, so B is on the beat through each repeat.
+  await page.keyboard.press("Shift+I");
   await page.waitForTimeout(900);
-  await row.getByRole("button", { name: "Loop out" }).click();
-  await expect(row.getByRole("button", { name: "Exit loop" })).toHaveAttribute("aria-pressed", "true");
+  await page.keyboard.press("Shift+O");
+  await expect.poll(() => page.evaluate(() => (window as unknown as {
+    __deckSeconds: () => { looping: boolean };
+  }).__deckSeconds().looping)).toBe(true);
   for (let n = 0; n < 5; n++) {
     await page.waitForTimeout(400);
     await expect.poll(offBeat, { timeout: 1000 }).toBeLessThan(0.012);

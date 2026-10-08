@@ -1,27 +1,27 @@
-//! A new, empty library, for a machine with no rekordbox library on it.
+//! A new, empty library, for a machine on which
+//! [`locate`](crate::locate) found nothing to open.
 //!
-//! Made where rekordbox itself would make one — `master.db` and `share/`
-//! under rekordbox's own folder, and the agent's `options.json` naming it —
-//! so the detector finds it on every later start exactly as it finds an
-//! installed library, and nothing else in the application has to know the
-//! library was made here.
+//! A new library is made where rekordbox makes one when nothing says
+//! otherwise — `master.db` and `share/` in its default folder — so the
+//! detector finds it on every later start exactly as it finds an installed
+//! library. Nothing of rekordbox's own is written: its agent's `options.json`
+//! is rekordbox's to write, and rekordbox rewrites it on every launch from
+//! `masterDbDirectory` anyway [OBS 7.2.11]. A library is never made in a
+//! configured folder that is missing, which is most often a drive that is
+//! not connected; rekordbox refuses the same [OBS 7.2.11].
 //!
 //! The schema is every table and index of rekordbox's own database,
-//! verbatim, and the passphrase is the one rekordbox uses: the `dp` in the
-//! agent's `options.json` was byte-for-byte the same on two installs, macOS
-//! 7.2.11 and Windows 7.2.14, and in the library rekordbox 7.2.14 made
-//! afresh [OBS 2026-09-24]. The rows it starts with are that fresh
-//! library's; see the note above [`MENU_ITEMS`].
+//! verbatim, and the passphrase is the one rekordbox uses
+//! ([`REKORDBOX_DP`](crate::key::REKORDBOX_DP)). The rows it starts with are
+//! the ones rekordbox 7.2.14 put in a library it made afresh; see the note
+//! above [`MENU_ITEMS`].
 
 use std::path::{Path, PathBuf};
 
 use rusqlite::{params, Connection};
 
+use crate::locate::{locate_with, Located, Sources};
 use crate::{DbError, LibraryLocation, Result};
-
-/// rekordbox's wrapped passphrase, as its agent writes it into `options.json`.
-const REKORDBOX_DP: &str =
-    "FJ9s0iA+hiPZgURNVQNg+Aj/UQ41IlitwloFsPnU3sISVHn5EVNQwthYGuUdAryEcCzJZHnZ5Q7JoupTY9FDRw==";
 
 /// Every `CREATE` statement in rekordbox's `master.db`.
 const SCHEMA: &str = include_str!("master_schema.sql");
@@ -108,45 +108,37 @@ const CUE_ANALYSIS_PLAYLIST: (&str, &str) = ("200000", "CUE Analysis Playlist");
 /// What making a library here would do.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Plan {
-    /// The database to make. Never an existing file.
+    /// The database to make. Never an existing file, and never in a
+    /// configured folder that is missing.
     pub master_db: PathBuf,
-    /// The agent's options file, to write when there is none. `None` when
-    /// one already names `master_db`, which is then left as it is.
-    pub options_json: Option<PathBuf>,
     passphrase: String,
 }
 
-/// Whether there is no library here and one can be made.
-///
-/// `Some` when no `master.db` is where rekordbox's `options.json` says, or,
-/// with no `options.json`, where rekordbox keeps it. `None` when there is a
-/// database — one that would not open is a different problem, and replacing
-/// it is never the answer — or an `options.json` that cannot be read, which
-/// is a broken install rather than an absent one.
+/// Whether a library can be made on this machine; see [`plan_with`].
 pub fn plan() -> Result<Option<Plan>> {
-    plan_at(&crate::options_location()?, &crate::default_library_dir()?)
+    plan_with(&Sources::installed()?)
 }
 
-/// [`plan`] for a given options file and default library folder.
-pub fn plan_at(options_json: &Path, default_dir: &Path) -> Result<Option<Plan>> {
-    if options_json.exists() {
-        let Ok(found) = crate::detect_from(options_json) else { return Ok(None) };
-        return Ok((!found.master_db.exists()).then_some(Plan {
-            master_db: found.master_db,
-            options_json: None,
-            passphrase: found.passphrase,
-        }));
+/// Where a new library would go, if one may be made.
+///
+/// The default folder, when nothing is configured there or elsewhere and it
+/// holds no database. `None` when there is a library to open, and when the
+/// configured library is on a drive that is missing: rekordbox asks for the
+/// drive instead, and only its "open Master Database in the default drive"
+/// (`locate::use_default`) leads back here.
+pub fn plan_with(sources: &Sources) -> Result<Option<Plan>> {
+    let master_db = match locate_with(sources)? {
+        Located::Found { .. } | Located::Unavailable { .. } => return Ok(None),
+        Located::Absent { master_db } => master_db,
+    };
+    if master_db.exists() {
+        return Ok(None);
     }
-    let master_db = default_dir.join("master.db");
-    Ok((!master_db.exists()).then(|| Plan {
-        master_db,
-        options_json: Some(options_json.to_path_buf()),
-        passphrase: String::new(),
-    }))
+    Ok(Some(Plan { master_db, passphrase: sources.passphrase()? }))
 }
 
-/// Makes the library the plan describes: the folders, an empty `master.db`,
-/// and the `options.json` naming it.
+/// Makes the library the plan describes: the folders and an empty
+/// `master.db`.
 ///
 /// The database is built beside its final name and moved into place only
 /// when complete, and the move refuses to replace a file, so a library that
@@ -162,15 +154,9 @@ pub fn create(plan: &Plan) -> Result<LibraryLocation> {
         std::fs::create_dir_all(share_root.join(folder))?;
     }
 
-    let passphrase = if plan.options_json.is_some() {
-        crate::key::derive_password(REKORDBOX_DP)?
-    } else {
-        plan.passphrase.clone()
-    };
-
     let staging = tempfile::Builder::new().prefix(".master.db-").tempdir_in(dir)?;
     let built = staging.path().join("master.db");
-    build(&built, &passphrase, &share_root)?;
+    build(&built, &plan.passphrase, &share_root)?;
     tempfile::TempPath::try_from_path(&built)?
         .persist_noclobber(&plan.master_db)
         .map_err(|e| {
@@ -182,14 +168,10 @@ pub fn create(plan: &Plan) -> Result<LibraryLocation> {
         })?;
     drop(staging);
 
-    if let Some(options) = &plan.options_json {
-        write_options(options, &plan.master_db, &share_root)?;
-    }
-
     Ok(LibraryLocation {
         master_db: plan.master_db.clone(),
         share_root,
-        passphrase,
+        passphrase: plan.passphrase.clone(),
         is_real_install: true,
     })
 }
@@ -322,61 +304,54 @@ fn unused_id(conn: &Connection, table: &str, rng: &mut rbl_core::ids::Rng) -> Re
     }
 }
 
-/// The agent's `options.json`, with the entries this application reads and
-/// the analysis root rekordbox writes beside them.
-fn write_options(to: &Path, master_db: &Path, share_root: &Path) -> Result<()> {
-    let json = serde_json::json!({
-        "options": [
-            ["db-path", master_db.to_string_lossy()],
-            ["dp", REKORDBOX_DP],
-            ["analysis-data-root-path", share_root.to_string_lossy()],
-        ]
-    });
-    let bytes = serde_json::to_vec_pretty(&json).map_err(|e| DbError::Open(e.to_string()))?;
-    if let Some(dir) = to.parent() {
-        std::fs::create_dir_all(dir)?;
-    }
-    // Written whole and then renamed, so a crash cannot leave a truncated
-    // file that reads as a broken install on the next start.
-    let mut staged = tempfile::NamedTempFile::new_in(to.parent().unwrap_or_else(|| Path::new(".")))?;
-    std::io::Write::write_all(&mut staged, &bytes)?;
-    staged.as_file().sync_all()?;
-    staged.persist(to).map_err(|e| DbError::Io(e.error))?;
-    Ok(())
-}
-
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::expect_used)]
+#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 mod tests {
     use super::*;
-    use crate::{detect_from, Library, OpenMode, SchemaSupport};
+    use crate::{Library, OpenMode, SchemaSupport};
 
-    fn fresh() -> (tempfile::TempDir, PathBuf, PathBuf) {
+    /// A machine in a temp folder with nothing on it, and its default
+    /// library folder.
+    fn fresh() -> (tempfile::TempDir, Sources, PathBuf) {
         let root = tempfile::tempdir().unwrap();
-        let options = root.path().join("agent/storage/options.json");
-        let library = root.path().join("Pioneer/rekordbox");
-        (root, options, library)
+        let sources = Sources::under(root.path());
+        let library = sources.default_dir.clone();
+        (root, sources, library)
+    }
+
+    fn found(sources: &Sources) -> LibraryLocation {
+        match locate_with(sources).unwrap() {
+            Located::Found { location, .. } => location,
+            other => panic!("expected a library, got {other:?}"),
+        }
+    }
+
+    /// rekordbox's settings naming `dir` as its library folder.
+    fn rekordbox_settings(sources: &Sources, dir: &Path) {
+        let file = sources.rekordbox_settings.as_deref().unwrap();
+        std::fs::create_dir_all(file.parent().unwrap()).unwrap();
+        let dir = rbl_core::xml::escape(&dir.to_string_lossy());
+        std::fs::write(file, format!("<PROPERTIES>\n  <VALUE name=\"masterDbDirectory\" val=\"{dir}\"/>\n</PROPERTIES>\n")).unwrap();
     }
 
     #[test]
     fn the_stored_dp_unwraps_to_rekordbox_s_passphrase() {
-        let key = crate::key::derive_password(REKORDBOX_DP).unwrap();
+        let key = crate::key::derive_password(crate::key::REKORDBOX_DP).unwrap();
         assert_eq!(key.len(), 64);
         assert!(key.starts_with("402fd"), "the published rekordbox 6/7 key starts 402fd");
     }
 
     #[test]
-    fn nothing_there_plans_a_library_and_its_options_file() {
-        let (_root, options, library) = fresh();
-        let plan = plan_at(&options, &library).unwrap().expect("a plan");
+    fn nothing_there_plans_a_library_in_the_default_folder() {
+        let (_root, sources, library) = fresh();
+        let plan = plan_with(&sources).unwrap().expect("a plan");
         assert_eq!(plan.master_db, library.join("master.db"));
-        assert_eq!(plan.options_json, Some(options));
     }
 
     #[test]
     fn a_made_library_is_found_opened_and_writable_like_an_installed_one() {
-        let (_root, options, library) = fresh();
-        let plan = plan_at(&options, &library).unwrap().unwrap();
+        let (_root, sources, library) = fresh();
+        let plan = plan_with(&sources).unwrap().unwrap();
         let made = create(&plan).unwrap();
 
         assert!(library.join("share/PIONEER/Artwork").is_dir());
@@ -388,7 +363,8 @@ mod tests {
             .collect();
         assert!(leftovers.is_empty(), "nothing else is left beside it: {leftovers:?}");
 
-        let found = detect_from(&options).unwrap();
+        assert!(!sources.agent_options.as_deref().unwrap().exists(), "rekordbox's options.json is not written");
+        let found = found(&sources);
         assert_eq!(found.master_db, made.master_db);
         assert_eq!(found.share_root, library.join("share"));
         assert_eq!(found.passphrase, made.passphrase);
@@ -419,15 +395,15 @@ mod tests {
             + 1;
         assert!(usn > seeded, "the writer counts on from the seeded rows: {usn} after {seeded}");
 
-        assert_eq!(plan_at(&options, &library).unwrap(), None, "made once, it is not offered again");
+        assert_eq!(plan_with(&sources).unwrap(), None, "made once, it is not offered again");
     }
 
     /// What rekordbox 7.2.14 wrote into a library it made itself, table by
     /// table, less the rows naming the machine and the account.
     #[test]
     fn a_made_library_starts_with_what_rekordbox_starts_one_with() {
-        let (_root, options, library) = fresh();
-        let mut location = create(&plan_at(&options, &library).unwrap().unwrap()).unwrap();
+        let (_root, sources, _library) = fresh();
+        let mut location = create(&plan_with(&sources).unwrap().unwrap()).unwrap();
         location.is_real_install = false;
         let db = Library::open(location, OpenMode::ReadOnly).unwrap();
         let count = |sql: &str| -> i64 { db.connection().query_row(sql, [], |r| r.get(0)).unwrap() };
@@ -458,47 +434,53 @@ mod tests {
 
     #[test]
     fn an_existing_database_is_never_replaced() {
-        let (_root, options, library) = fresh();
-        let plan = plan_at(&options, &library).unwrap().unwrap();
+        let (_root, sources, library) = fresh();
+        let plan = plan_with(&sources).unwrap().unwrap();
         std::fs::create_dir_all(&library).unwrap();
         std::fs::write(library.join("master.db"), b"someone else's").unwrap();
 
         assert!(create(&plan).is_err());
         assert_eq!(std::fs::read(library.join("master.db")).unwrap(), b"someone else's");
-        assert!(!options.exists(), "no options file points at a library this did not make");
     }
 
     #[test]
-    fn an_options_file_naming_a_missing_database_is_kept_and_its_key_used() {
-        let (root, options, library) = fresh();
+    fn a_missing_configured_drive_is_never_where_a_library_is_made() {
+        let (root, sources, _library) = fresh();
+        let drive = root.path().join("Volumes/DJ SSD/PIONEER/Master");
+        rekordbox_settings(&sources, &drive);
+        assert_eq!(plan_with(&sources).unwrap(), None, "rekordbox asks for the drive instead");
+        assert!(!root.path().join("Volumes").exists());
+    }
+
+    #[test]
+    fn an_options_file_naming_a_missing_library_is_not_where_one_is_made() {
+        let (root, sources, _library) = fresh();
         let elsewhere = root.path().join("elsewhere/master.db");
+        let options = sources.agent_options.clone().unwrap();
         std::fs::create_dir_all(options.parent().unwrap()).unwrap();
         crate::fixture::write_options_json(&options, &elsewhere.to_string_lossy(), "their-own-key").unwrap();
         let before = std::fs::read(&options).unwrap();
 
-        let plan = plan_at(&options, &library).unwrap().unwrap();
-        assert_eq!(plan.master_db, elsewhere);
-        assert_eq!(plan.options_json, None);
-        let made = create(&plan).unwrap();
-
-        assert_eq!(std::fs::read(&options).unwrap(), before);
-        assert_eq!(made.passphrase, "their-own-key");
-        Library::open(detect_from(&options).unwrap(), OpenMode::ReadOnly).unwrap();
+        assert_eq!(plan_with(&sources).unwrap(), None);
+        assert!(!elsewhere.parent().unwrap().exists());
+        assert_eq!(std::fs::read(&options).unwrap(), before, "options.json is only read");
     }
 
     #[test]
-    fn an_unreadable_options_file_is_not_an_absent_library() {
-        let (_root, options, library) = fresh();
+    fn an_unreadable_options_file_does_not_hide_the_default_folder() {
+        let (_root, sources, library) = fresh();
+        let options = sources.agent_options.clone().unwrap();
         std::fs::create_dir_all(options.parent().unwrap()).unwrap();
         std::fs::write(&options, b"{ not json").unwrap();
-        assert_eq!(plan_at(&options, &library).unwrap(), None);
+        assert_eq!(plan_with(&sources).unwrap().unwrap().master_db, library.join("master.db"));
     }
 
     #[test]
-    fn a_default_database_without_an_options_file_is_not_offered() {
-        let (_root, options, library) = fresh();
+    fn a_default_database_without_an_options_file_is_found_not_offered() {
+        let (_root, sources, library) = fresh();
         std::fs::create_dir_all(&library).unwrap();
         std::fs::write(library.join("master.db"), b"x").unwrap();
-        assert_eq!(plan_at(&options, &library).unwrap(), None);
+        assert_eq!(plan_with(&sources).unwrap(), None);
+        assert_eq!(found(&sources).master_db, library.join("master.db"));
     }
 }

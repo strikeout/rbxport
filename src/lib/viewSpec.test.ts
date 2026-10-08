@@ -29,6 +29,17 @@ describe("specForNode", () => {
     expect(spec.descending).toBe(true);
   });
 
+  it("carries DJ Play Count to the backend sort key", () => {
+    expect(specForNode(playlist, "", { column: "djPlayCount", descending: true }).sort)
+      .toBe("djPlayCount");
+  });
+
+  it("carries each detail column to the backend as its own sort key", () => {
+    for (const column of ["size", "color", "location", "trackNumber", "fileType", "publishTrackInfo"] as const) {
+      expect(specForNode(playlist, "", { column, descending: false }).sort).toBe(column);
+    }
+  });
+
   it("falls back to the default order when nothing is chosen", () => {
     const spec = specForNode(playlist, "", null);
     expect(spec.sort).toBe(DEFAULT_SORT.column);

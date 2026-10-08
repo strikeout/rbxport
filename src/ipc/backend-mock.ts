@@ -14,10 +14,10 @@ import theme from "@/styles/theme";
 
 import type {
   AppErrorDto, Backend, Backup, BackupProgress, BackupSizes, Cue, DeckEvent, Device, DeviceSettings, Edits, ExplorerRoot, ExportReport,
-  EditHistoryState, FilterValues, GridState, LibraryProblem, LibrarySummary, Limiter, LinkPeerSeen, LinkStatus, RelatedCriterion, RowDto, SortKey,
+  DatabaseDrive, EditHistoryState, FilterValues, GridState, LibraryProblem, LibrarySummary, Limiter, LinkPeerSeen, LinkStatus, RelatedCriterion, RowDto, SortKey,
   SmartRule, StickDefaults, SyncPlaylist, SyncProgress, Tick, TrackDetails, TrackField,
   PreferencesRequest, UpdateCheck, UpdateProgress, UpdateReady, ExportProgress,
-  TrackFilter, TreeNode, ViewHandle, ViewSpec, VoiceId, WaveformKind,
+  DeckId, TrackFilter, TreeNode, ViewHandle, ViewSpec, WaveformKind,
 } from "./types";
 import { TREE_ROOT } from "./types";
 import { applyEditFrom, validateEdit, isDynamicFrom, tempoX100, type EditableBeat } from "@/lib/gridEdit";
@@ -310,6 +310,18 @@ function makeTree(playlistFixture: PlaylistFixture): TreeNode[] {
 
 const collator = new Intl.Collator("en", { sensitivity: "base", numeric: true });
 
+/** A detail field as a number, 0 when the row does not carry it. */
+function extraNumber(row: RowDto, field: string): number {
+  const value = row.extra?.[field];
+  return typeof value === "number" ? value : 0;
+}
+
+/** A detail field as text, empty when the row does not carry it. */
+function extraText(row: RowDto, field: string): string {
+  const value = row.extra?.[field];
+  return typeof value === "string" ? value : "";
+}
+
 function compare(a: RowDto, b: RowDto, col: SortKey): number {
   switch (col) {
     case "keyCamelot": {
@@ -325,6 +337,15 @@ function compare(a: RowDto, b: RowDto, col: SortKey): number {
     case "bpm": return a.bpmX100 - b.bpmX100;
     case "duration": return a.durationSec - b.durationSec;
     case "rating": return a.rating - b.rating;
+    case "djPlayCount": case "size": case "year": case "sampleRate": case "bitrate": case "color":
+    case "discNo": case "trackNumber": case "fileType": case "bitDepth":
+      return extraNumber(a, col) - extraNumber(b, col);
+    // Ticked first, as rekordbox's `comparePublic` orders the box.
+    case "publishTrackInfo": return Number(b.extra?.publishTrackInfo === true) - Number(a.extra?.publishTrackInfo === true);
+    case "fileName": return collator.compare(a.fileName ?? "", b.fileName ?? "");
+    case "location": case "composer": case "albumArtist": case "remixer": case "originalArtist":
+    case "mixName": case "lyricist": case "message": case "dateCreated":
+      return collator.compare(extraText(a, col), extraText(b, col));
     case "title": return collator.compare(a.title, b.title);
     case "artist": return collator.compare(a.artist, b.artist);
     case "album": return collator.compare(a.album, b.album);
@@ -405,8 +426,9 @@ export function createMockBackend(options: MockOptions = {}): Backend {
     membership.get(id)?.length ?? mockPlaylistSize(id);
 
   /**
-   * Related Tracks, as the index picks them: within six percent of the
-   * track's BPM and in its key or one beside it on the wheel, the same
+   * Related Tracks, as the index picks them: within five percent of the
+   * track's BPM or of half or double it, and in its key or one beside it on
+   * the wheel, the same
    * genre added in the last thirty days, or the same artist. The track
    * itself is left out. No track, no rows.
    */
@@ -420,13 +442,23 @@ export function createMockBackend(options: MockOptions = {}): Backend {
     };
     const together = (a: number, b: number) =>
       a >= 0 && b >= 0 && (a === b || (a ^ 1) === b || ((a & 1) === (b & 1) && ((a + 2) % 24 === b || (b + 2) % 24 === a)));
+    // rekordbox's window: 5% either side, ends rounded ties to even, at the
+    // track's tempo, half it and double it.
+    const roundEven = (x: number) => {
+      const r = Math.round(x);
+      return Math.abs(x % 1) === 0.5 && r % 2 !== 0 ? r - 1 : r;
+    };
+    const within = (centre: number, bpm: number) =>
+      bpm >= roundEven(Math.max(centre * (1 - 0.05), 0)) && bpm <= roundEven(centre * (0.05 + 1));
+    const bpmMatches = (centre: number, bpm: number) =>
+      within(centre, bpm) || within(roundEven(centre * 0.5), bpm) || within(centre * 2, bpm);
     const since = Date.parse("2026-09-18") - 30 * 86_400_000;
     return all.flatMap((row, i) => {
       if (i === at) return [];
       switch (criterion) {
         case "bpmKey": {
           if (track.bpmX100 === 0 && rank(track.key) < 0) return [];
-          if (track.bpmX100 !== 0 && Math.abs(row.bpmX100 - track.bpmX100) > track.bpmX100 * 0.06) return [];
+          if (track.bpmX100 !== 0 && !bpmMatches(track.bpmX100, row.bpmX100)) return [];
           if (rank(track.key) >= 0 && !together(rank(track.key), rank(row.key))) return [];
           return [i];
         }
@@ -438,7 +470,7 @@ export function createMockBackend(options: MockOptions = {}): Backend {
         // and key matches, as the real backend's are without one.
         case "suggestion": {
           if (track.bpmX100 === 0 && rank(track.key) < 0) return [];
-          if (track.bpmX100 !== 0 && Math.abs(row.bpmX100 - track.bpmX100) > track.bpmX100 * 0.06) return [];
+          if (track.bpmX100 !== 0 && !bpmMatches(track.bpmX100, row.bpmX100)) return [];
           if (rank(track.key) >= 0 && !together(rank(track.key), rank(row.key))) return [];
           return [i];
         }
@@ -618,11 +650,33 @@ export function createMockBackend(options: MockOptions = {}): Backend {
   /**
    * `?nolibrary` is a machine with no rekordbox library at all: nothing loads
    * until `createLibrary`, and `libraryProblem` says so.
+   * `?libraryunavailable` is rekordbox set to a library on a drive that is
+   * not connected; `useDefaultLibrary` then leaves the default folder, which
+   * is empty, to be made. `?drivelibrary` puts a library on a connected
+   * drive for Database management to list.
    */
-  let missing = readFlagFromUrl("nolibrary");
+  const defaultMasterDb = "/Users/you/Library/Pioneer/rekordbox/master.db";
+  const databaseDrives: DatabaseDrive[] = [
+    { name: "Macintosh HD", masterDb: defaultMasterDb, current: true },
+    ...(readFlagFromUrl("drivelibrary")
+      ? [{ name: "DJ SSD", masterDb: "/Volumes/DJ SSD/PIONEER/Master/master.db", current: false }]
+      : []),
+  ];
+  let problem: LibraryProblem | null = readFlagFromUrl("libraryunavailable")
+    ? { kind: "unavailable", masterDb: "/Volumes/DJ SSD/PIONEER/Master/master.db", defaultMasterDb }
+    : readFlagFromUrl("nolibrary")
+      ? { kind: "missing", masterDb: defaultMasterDb }
+      : null;
   let ready =
-    !missing && (typeof location === "undefined" || !new URLSearchParams(location.search).has("slow"));
+    problem === null && (typeof location === "undefined" || !new URLSearchParams(location.search).has("slow"));
   const readyListeners = new Set<() => void>();
+  const problemListeners = new Set<(problem: LibraryProblem) => void>();
+  /** The library is there now: the window loads it like any other start. */
+  const libraryFound = () => {
+    problem = null;
+    ready = true;
+    for (const listener of readyListeners) listener();
+  };
   if (typeof window !== "undefined") {
     (window as unknown as { __libraryReady: () => void }).__libraryReady = () => {
       ready = true;
@@ -1423,27 +1477,41 @@ export function createMockBackend(options: MockOptions = {}): Backend {
     tempo: 1, masterTempo: false, keyShift: 0, startInFrames: 0,
     loopInFrames: 0, loopOutFrames: 0, looping: false, startsAt: 0,
   };
-  /** The preview voice, never loaded: see `tick`. */
-  const idlePreview = { ...deckB };
-  /**
-   * The deck that a command names. A command to the preview voice changes a
-   * copy that nothing counts or reads, so the preview stays still.
-   */
-  const deckOf = (deck: VoiceId) => (deck === "a" ? deckA : deck === "b" ? deckB : { ...idlePreview });
+  /** The deck that a command names. */
+  const deckOf = (deck: DeckId) => (deck === "a" ? deckA : deckB);
   /** The beat of the track on each deck, in seconds, or 0 for none. */
   const deckBeat = { a: 0, b: 0 };
   // Where each deck is, for an end-to-end test that compares the two.
   if (typeof window !== "undefined") {
-    (window as unknown as { __deckSeconds: () => { a: number; b: number; beat: number } }).__deckSeconds = () => ({
+    (window as unknown as {
+      __deckSeconds: () => { a: number; b: number; beat: number; looping: boolean };
+    }).__deckSeconds = () => ({
       a: deckA.frames / SAMPLE_RATE,
       b: deckB.frames / SAMPLE_RATE,
       beat: deckBeat.b,
+      looping: deckB.looping,
     });
   }
   const deckTickListeners = new Set<(tick: Tick) => void>();
   const deckEventListeners = new Set<(event: DeckEvent) => void>();
   let clock: ReturnType<typeof setTimeout> | null = null;
   let clockAt = 0;
+
+  /*
+   * The preview player: its own clock, kept as a start time and an offset
+   * rather than a ticking timer, because nothing listens to it — the
+   * interface asks where it is.
+   */
+  const previewed = { track: null as string | null, playing: false, positionMs: 0, durationMs: 0, since: 0 };
+  const previewNow = (): number => {
+    if (!previewed.playing) return previewed.positionMs;
+    const at = previewed.positionMs + (performance.now() - previewed.since);
+    if (at < previewed.durationMs) return at;
+    // Played to the end: it stops there, as the engine's deck does.
+    previewed.playing = false;
+    previewed.positionMs = previewed.durationMs;
+    return previewed.positionMs;
+  };
 
   /** The master level, which a browser can hold even with nothing to apply it to. */
   // −1 dB, the knob at 10: what the engine starts at.
@@ -1461,10 +1529,6 @@ export function createMockBackend(options: MockOptions = {}): Backend {
   const tick = (): Tick => ({
     a: { ...deckA },
     b: { ...deckB },
-    // ponytail: the mock never loads the preview voice, so a preview in a
-    // browser stays silent and still. Give it its own counted deck if an
-    // end-to-end test has to drive one.
-    p: { ...idlePreview },
     sampleRate: SAMPLE_RATE,
     // A browser has no audio callback, so there is nothing to meter. Zero is
     // the truth here rather than a placeholder: nothing is coming out.
@@ -2012,7 +2076,6 @@ export function createMockBackend(options: MockOptions = {}): Backend {
     // readouts — then behaves in a browser exactly as it does in the app, and
     // can be tested. What a browser cannot do is make a noise.
     deckLoad: (deck, trackId, loadId) => {
-      if (deck === "p") return wait(undefined);
       const d = deckOf(deck);
       const index = Number.parseInt(trackId, 10) - 100000;
       const row = all[index];
@@ -2057,13 +2120,9 @@ export function createMockBackend(options: MockOptions = {}): Backend {
     // The wait is a timer here rather than counted in output frames: a
     // browser has no callback to count them in, and the timing is only
     // ever judged by ear against a real device.
-    deckPlayAfter: (deck, delayMs, positionMs) => {
+    deckPlayAfter: (deck, delayMs) => {
       const d = deckOf(deck);
       if (!d.loaded) return wait(undefined);
-      if (positionMs !== undefined) {
-        d.frames = Math.max(-5 * SAMPLE_RATE, Math.round((positionMs / 1000) * SAMPLE_RATE));
-        d.generation += 1;
-      }
       d.playing = true;
       d.startsAt = performance.now() + Math.max(0, delayMs);
       startClock();
@@ -2086,7 +2145,7 @@ export function createMockBackend(options: MockOptions = {}): Backend {
     },
     deckMove: (deck, byMs) => {
       const d = deckOf(deck);
-      d.frames = Math.max(0, d.frames + Math.round((byMs / 1000) * SAMPLE_RATE));
+      d.frames = Math.max(-5 * SAMPLE_RATE, d.frames + Math.round((byMs / 1000) * SAMPLE_RATE));
       d.generation += 1;
       sendTick();
       return wait(undefined);
@@ -2103,7 +2162,6 @@ export function createMockBackend(options: MockOptions = {}): Backend {
         d.frames = from;
         d.generation += 1;
         d.startsAt = Math.max(d.startsAt, performance.now());
-      d.startsAt = Math.max(d.startsAt, performance.now());
       }
       sendTick();
       return wait(undefined);
@@ -2116,7 +2174,6 @@ export function createMockBackend(options: MockOptions = {}): Backend {
         d.frames = d.loopInFrames;
         d.generation += 1;
         d.startsAt = Math.max(d.startsAt, performance.now());
-      d.startsAt = Math.max(d.startsAt, performance.now());
       }
       sendTick();
       return wait(undefined);
@@ -2255,7 +2312,6 @@ export function createMockBackend(options: MockOptions = {}): Backend {
     setChannelBand: () => wait(undefined),
     setChannelKill: () => wait(undefined),
     setChannelTrim: () => wait(undefined),
-    setChannelMuted: () => wait(undefined),
     setCrossfade: () => wait(undefined),
     setEqCurve: () => wait(undefined),
     deckScrubEnd: (deck) => {
@@ -2277,6 +2333,34 @@ export function createMockBackend(options: MockOptions = {}): Backend {
       }),
 
     deckState: () => wait(tick()),
+    previewPlay: (trackId, positionMs) => {
+      const row = all[Number.parseInt(trackId, 10) - 100000];
+      if (!row) return notFound("That track's file could not be found.");
+      // rekordbox outside PERFORMANCE mode pauses the decks for a preview.
+      if (deckA.playing || deckB.playing) {
+        deckA.playing = false;
+        deckB.playing = false;
+        stopClock();
+        sendTick();
+      }
+      previewed.track = trackId;
+      previewed.durationMs = row.durationSec * 1000;
+      previewed.positionMs = Math.min(Math.max(0, positionMs), previewed.durationMs);
+      previewed.since = performance.now();
+      previewed.playing = previewed.positionMs < previewed.durationMs;
+      return wait(undefined);
+    },
+    previewStop: () => {
+      previewed.positionMs = previewNow();
+      previewed.playing = false;
+      return wait(undefined);
+    },
+    previewState: () => {
+      const positionMs = previewNow();
+      return wait({
+        track: previewed.track, playing: previewed.playing, positionMs, durationMs: previewed.durationMs,
+      });
+    },
     onDeckTick: (listener) => {
       deckTickListeners.add(listener);
       return () => deckTickListeners.delete(listener);
@@ -2294,16 +2378,30 @@ export function createMockBackend(options: MockOptions = {}): Backend {
       readyListeners.add(listener);
       return () => readyListeners.delete(listener);
     },
-    onLibraryProblem: () => () => undefined,
-    libraryProblem: () =>
-      wait<LibraryProblem | null>(
-        missing ? { kind: "missing", masterDb: "/Users/you/Library/Pioneer/rekordbox/master.db" } : null,
-      ),
+    onLibraryProblem: (listener) => {
+      problemListeners.add(listener);
+      return () => problemListeners.delete(listener);
+    },
+    libraryProblem: () => wait<LibraryProblem | null>(problem),
     createLibrary: async () => {
       await wait(undefined);
-      missing = false;
-      ready = true;
-      for (const listener of readyListeners) listener();
+      libraryFound();
+    },
+    useDefaultLibrary: async () => {
+      await wait(undefined);
+      // The default folder is empty here, so it is offered to be made, as
+      // the real backend's next look reports.
+      problem = { kind: "missing", masterDb: defaultMasterDb };
+      for (const listener of problemListeners) listener({ ...problem });
+    },
+    databaseDrives: () => wait(databaseDrives.map((drive) => ({ ...drive }))),
+    switchLibrary: async (masterDb) => {
+      await wait(undefined);
+      if (!databaseDrives.some((drive) => drive.masterDb === masterDb)) {
+        throw new Error(`${masterDb} is not a master.db`);
+      }
+      // The real app starts again on it; the mock marks it open.
+      for (const drive of databaseDrives) drive.current = drive.masterDb === masterDb;
     },
 
     // A browser has no native menu bar. The mock exposes the listener so a
@@ -2381,6 +2479,13 @@ export function createMockBackend(options: MockOptions = {}): Backend {
             if (settings?.key !== false) row.key ||= "Am";
             // As the shell says it: a deck showing the track redraws.
             for (const listener of analysisListeners) listener(trackId);
+            const firstBeatMs = settings?.bpmGrid !== false && settings?.firstBeatCue
+              ? gridOf(trackId)?.beats[0]?.timeMs : undefined;
+            const cues = cuesOf(trackId);
+            if (firstBeatMs !== undefined && !cues.some(cue => cue.memory && Math.abs(cue.positionMs - firstBeatMs) <= 5)) {
+              cues.push({ id: `cue-${nextCueId++}`, positionMs: firstBeatMs, outMs: 0, letter: "", memory: true, colour: null });
+              void cuesChanged(trackId, null);
+            }
             resolve({
             trackId,
             analysed: row.analysed,
@@ -2401,7 +2506,7 @@ export function createMockBackend(options: MockOptions = {}): Backend {
     // No picker in a browser, so nothing can be chosen to import or written.
     importFiles: () => wait(null),
     importFolder: () => wait(null),
-    importPaths: (paths) => wait({ imported: 0, skipped: paths.map((p) => `${p}: the mock library takes no files`), tracks: [] }),
+    importPaths: (paths) => wait({ imported: 0, skipped: paths.map((p) => `${p}: the mock library takes no files`), tracks: [], existing: [] }),
     importXml: () => wait(null),
     exportLoopWav: () => wait(null),
     importItunes: () => wait(null),
@@ -2486,6 +2591,7 @@ export function createMockBackend(options: MockOptions = {}): Backend {
         hasOneLibrary: true,
         hasLibrarySettings: true,
         hasDevSetting: true,
+        deviceLibraryBackgroundColorType: current.deviceLibraryBackgroundColorType ?? 0,
         waveformColor: defaults?.waveformColor ?? current.waveformColor,
         waveformPosition: defaults?.waveformPosition ?? current.waveformPosition,
         overviewWaveform: defaults?.overviewWaveform ?? current.overviewWaveform,

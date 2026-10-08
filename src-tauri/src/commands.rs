@@ -348,9 +348,12 @@ fn enrich_rows(state: &AppState, rows: &mut [RowDto], columns: &[String]) -> App
     let wanted: Vec<&str> = columns.iter().map(String::as_str).filter(|column| FIELDS.contains(column)).collect();
     if wanted.is_empty() { return Ok(()); }
     state.read_db(|db| {
+        // The location rekordbox shows: the stored path through the drive substitution.
+        let drive = db.drive_mapping();
         for row in rows {
             if row.id.starts_with("file:") { continue; }
-            let Some(details) = rbl_db::details::browser_details(db.connection(), &row.id)? else { continue };
+            let Some(mut details) = rbl_db::details::browser_details(db.connection(), &row.id)? else { continue };
+            if let Some(drive) = &drive { details.path = drive.apply(&details.path).into_owned(); }
             let mut values = serde_json::Map::new();
             for &column in &wanted {
                 let value: Value = match column {
@@ -817,7 +820,7 @@ pub async fn start_link_export<R: tauri::Runtime>(
     app: tauri::AppHandle<R>,
     state: State<'_, Arc<AppState>>,
     interface: Option<String>,
-    alphanumeric_keys: Option<bool>,
+    device_settings: Option<rbl_prolink::DeviceSettings>,
     alphabetical_keys: Option<bool>,
 ) -> AppResult<LinkStatusDto> {
     if let Some(status) = state.link_status() {
@@ -832,12 +835,8 @@ pub async fn start_link_export<R: tauri::Runtime>(
     let owner = Arc::clone(&state);
     let emitter = app.clone();
     let library_emitter = app.clone();
+    let device_settings = device_settings.unwrap_or_default();
     let started = blocking("start_link_export", move || {
-        let key_notation = if alphanumeric_keys.unwrap_or(false) {
-            rbl_link::KeyNotation::Alphanumeric
-        } else {
-            rbl_link::KeyNotation::Classic
-        };
         let key_order = if alphabetical_keys.unwrap_or(false) {
             rbl_link::KeyOrder::Alphabetical
         } else {
@@ -846,7 +845,7 @@ pub async fn start_link_export<R: tauri::Runtime>(
         Ok(crate::link::Session::start(
             &owner,
             interface.as_deref(),
-            key_notation,
+            device_settings,
             key_order,
             move |status| {
                 let _ = tauri::Emitter::emit(&emitter, "link:status", status);
@@ -1245,11 +1244,46 @@ pub(crate) struct ExportSelection {
     pub sync: rbl_export::SyncSource,
 }
 
+/// What exporting the folder at `folder` writes, in tree order: the
+/// playlists (plain and intelligent) under it at any depth, and the folder
+/// itself with every folder under it, so empty ones keep their place.
+fn folder_contents(playlists: &rbl_index::Playlists, folder: usize) -> (Vec<usize>, Vec<usize>) {
+    let mut children: Vec<Vec<usize>> = vec![Vec::new(); playlists.len()];
+    for index in 0..playlists.len() {
+        if let Some(parent) = playlists.parent.get(index).copied().filter(|&p| p != rbl_index::NO_ID) {
+            if let Some(bucket) = children.get_mut(parent as usize) {
+                bucket.push(index);
+            }
+        }
+    }
+    let (mut leaves, mut folders) = (Vec::new(), Vec::new());
+    // Iterative, with a visited set, as the tree builder is: a corrupt
+    // parent cycle must not loop forever.
+    let mut visited = vec![false; playlists.len()];
+    let mut stack = vec![folder];
+    while let Some(index) = stack.pop() {
+        match visited.get_mut(index) {
+            Some(seen) if !*seen => *seen = true,
+            _ => continue,
+        }
+        if playlists.is_folder(index) {
+            folders.push(index);
+            if let Some(under) = children.get(index) {
+                stack.extend(under.iter().rev());
+            }
+        } else {
+            leaves.push(index);
+        }
+    }
+    (leaves, folders)
+}
+
 impl ExportSelection {
     /// The union of these playlists, each track read once however many of
     /// them hold it. Ids are the tree's numeric playlist ids. An intelligent
     /// playlist is exported as what its rule admits now, which is what
-    /// rekordbox writes to a stick for one too.
+    /// rekordbox writes to a stick for one too. A folder stands for every
+    /// playlist under it, and goes on the stick as a folder with them inside.
     pub(crate) fn from_playlists(
         state: &AppState,
         library: &rbl_index::Library,
@@ -1278,18 +1312,35 @@ impl ExportSelection {
         // Named first and read after: `source_rows` takes the playlists
         // itself, so the guard is let go before it is asked.
         let mut named: Vec<(u64, String, rbl_index::TrackSource)> = Vec::with_capacity(playlist_ids.len());
+        // Folders asked for by name, kept on the stick even when nothing
+        // under them is a playlist.
+        let mut chosen_folders: Vec<u64> = Vec::new();
         {
             let playlists = library.playlists();
+            let mut seen = std::collections::HashSet::new();
             for id in playlist_ids {
                 let Some(index) = id.parse::<u64>().ok().and_then(|numeric| playlists.index_of(numeric)) else {
                     return Err(AppError::new(ErrorKind::NotFound, "That playlist is not in the library."));
                 };
-                let source = if playlists.is_smart(index) {
-                    rbl_index::TrackSource::SmartPlaylist(index)
+                // A folder has no tracks of its own: exported as a playlist
+                // it would land on the stick empty.
+                let (leaves, folders) = if playlists.is_folder(index) {
+                    folder_contents(&playlists, index)
                 } else {
-                    rbl_index::TrackSource::Playlist(index)
+                    (vec![index], Vec::new())
                 };
-                named.push((playlists.ids.get(index).copied().unwrap_or(0), playlists.name(index).to_owned(), source));
+                chosen_folders.extend(folders.into_iter().filter_map(|folder| playlists.ids.get(folder).copied()));
+                for index in leaves {
+                    if !seen.insert(index) {
+                        continue;
+                    }
+                    let source = if playlists.is_smart(index) {
+                        rbl_index::TrackSource::SmartPlaylist(index)
+                    } else {
+                        rbl_index::TrackSource::Playlist(index)
+                    };
+                    named.push((playlists.ids.get(index).copied().unwrap_or(0), playlists.name(index).to_owned(), source));
+                }
             }
         }
         let rows_of: Vec<Vec<u32>> = named.iter().map(|(_, _, source)| library.source_rows(source)).collect();
@@ -1367,6 +1418,12 @@ impl ExportSelection {
             let mut parent = p.parent_id;
             while parent != 0 && ancestors.insert(parent) {
                 parent = sync.tree.iter().find(|n| n.id == parent).map_or(0, |n| n.parent);
+            }
+        }
+        for folder in chosen_folders {
+            let mut next = folder;
+            while next != 0 && ancestors.insert(next) {
+                next = sync.tree.iter().find(|n| n.id == next).map_or(0, |n| n.parent);
             }
         }
         let mut folders = Vec::new();
@@ -1612,7 +1669,13 @@ fn write_export_with_phase(
     if rbl_db::is_rekordbox_running() {
         return Err(AppError::internal("Quit rekordbox before syncing this USB so only one application writes its libraries."));
     }
-    let export_root = rbl_export::export_root(destination);
+    let preferred_root = rbl_devices::list()
+        .into_iter()
+        .find(|device| device.mount_point == destination)
+        .and_then(|device| rbl_export::ExportRoot::for_file_system(&device.file_system));
+    let root_name = rbl_export::export_root_name_with(destination, preferred_root)
+        .map_err(|e| AppError::new(ErrorKind::Internal, e.to_string()))?;
+    let export_root = destination.join(root_name);
     let settings_root = dirs::data_dir().unwrap_or_else(std::env::temp_dir).join("rbxport/usb-settings");
     let imported_settings: Vec<_> = ["MYSETTING.DAT", "MYSETTING2.DAT", "DJMMYSETTING.DAT"].into_iter()
         .filter(|name| !export_root.join(name).exists())
@@ -1623,7 +1686,12 @@ fn write_export_with_phase(
         &selection.tracks,
         &selection.playlists,
         &selection.my_tags,
-        &rbl_export::ExportOptions { defaults: library_defaults.as_ref(), sync: Some(&selection.sync), compatibility: compatibility_format },
+        &rbl_export::ExportOptions {
+            defaults: library_defaults.as_ref(),
+            sync: Some(&selection.sync),
+            compatibility: compatibility_format,
+            root: preferred_root,
+        },
         progress,
         cancelled,
     )
@@ -1953,17 +2021,12 @@ pub async fn deck_play<R: tauri::Runtime>(
 
 /// Starts a deck after `delay_ms` of silence, counted by the audio callback:
 /// quantized play on a synced deck, held for the master's next beat.
-///
-/// `position_ms` moves the playhead first, in this command. A seek clears a
-/// pending wait, and two separate commands can arrive in either order, so a
-/// separate seek that arrives late starts the deck at once and off the beat.
 #[tauri::command]
 pub async fn deck_play_after<R: tauri::Runtime>(
     app: tauri::AppHandle<R>,
     player: State<'_, Arc<crate::player::Player>>,
     deck: String,
     delay_ms: f64,
-    position_ms: Option<f64>,
 ) -> AppResult<()> {
     let engine = player.engine(&app)?;
     // Clamped to a positive number first: a delay is at most a beat, and a
@@ -1974,11 +2037,7 @@ pub async fn deck_play_after<R: tauri::Runtime>(
     } else {
         0
     };
-    let deck = crate::player::deck_of(&deck);
-    if let Some(ms) = position_ms.filter(|ms| ms.is_finite()) {
-        engine.seek_ms(deck, ms);
-    }
-    engine.play_after(deck, frames);
+    engine.play_after(crate::player::deck_of(&deck), frames);
     crate::player::start_ticker(&app);
     Ok(())
 }
@@ -2120,24 +2179,6 @@ pub async fn set_channel_kill<R: tauri::Runtime>(
     let engine = player.engine(&app)?;
     if let Some(channel) = engine.mixer().channels.get(channel_of(&deck)) {
         channel.set_kill(band_of(&band), killed);
-    }
-    Ok(())
-}
-
-/// Silences a deck in the sum, or brings it back, without a change to its
-/// transport: a browser preview in "mute" mode lets the decks run on unheard.
-#[tauri::command]
-pub async fn set_channel_muted(
-    player: State<'_, Arc<crate::player::Player>>,
-    deck: String,
-    muted: bool,
-) -> AppResult<()> {
-    // An engine that is not open has nothing muted, and opening one here
-    // would start the audio device at launch.
-    if let Some(engine) = player.opened() {
-        if let Some(channel) = engine.mixer().channels.get(channel_of(&deck)) {
-            channel.set_muted(muted);
-        }
     }
     Ok(())
 }
@@ -2411,6 +2452,45 @@ pub async fn deck_state(
     }))
 }
 
+/// Previews a track from `position_ms` without loading it onto a deck: a
+/// click on the waveform in the browser's Preview column. See `preview.rs`
+/// for what rekordbox does and how that was established.
+#[tauri::command]
+pub async fn preview_play<R: tauri::Runtime>(
+    app: tauri::AppHandle<R>,
+    state: State<'_, Arc<AppState>>,
+    player: State<'_, Arc<crate::player::Player>>,
+    preview: State<'_, Arc<crate::preview::Preview>>,
+    track: String,
+    position_ms: f64,
+) -> AppResult<()> {
+    let library = state.library()?;
+    let Some(path) = library.audio_path_of(&track).map(std::path::PathBuf::from) else {
+        return Err(AppError::new(ErrorKind::NotFound, "That track's file could not be found.")
+            .with_detail(format!("track {track}")));
+    };
+    let decks = Arc::clone(&player);
+    let preview = Arc::clone(&preview);
+    // Waits on the file opening, which may be a disk waking up: off the
+    // async runtime.
+    blocking("preview_play", move || preview.play(&app, &decks, &track, &path, position_ms)).await
+}
+
+/// Stops the preview where it is.
+#[tauri::command]
+pub async fn preview_stop(preview: State<'_, Arc<crate::preview::Preview>>) -> AppResult<()> {
+    preview.stop();
+    Ok(())
+}
+
+/// The preview's track, whether it is playing, and where.
+#[tauri::command]
+pub async fn preview_state(
+    preview: State<'_, Arc<crate::preview::Preview>>,
+) -> AppResult<crate::preview::PreviewStateDto> {
+    Ok(preview.state())
+}
+
 /// A track's cue points.
 ///
 /// A hot cue's colour is what rekordbox paints for its `ColorTableIndex`,
@@ -2659,7 +2739,20 @@ pub async fn import_files<R: tauri::Runtime>(
                 let mut imported = 0_u32;
                 let mut skipped = Vec::new();
                 let mut tracks = Vec::new();
+                let mut existing = Vec::new();
                 for file in &files {
+                    // A file already in the library is not a failure: a drop
+                    // onto a playlist still wants that track in the playlist.
+                    if let Some(id) = writer.track_id_at(file)? {
+                        existing.push(crate::dto::ImportedTrackDto {
+                            id,
+                            title: file
+                                .file_name()
+                                .map(|name| name.to_string_lossy().into_owned())
+                                .unwrap_or_default(),
+                        });
+                        continue;
+                    }
                     match writer.import_file(file) {
                         Ok(id) => {
                             imported += 1;
@@ -2677,7 +2770,7 @@ pub async fn import_files<R: tauri::Runtime>(
                         Err(other) => return Err(other),
                     }
                 }
-                Ok(ImportReportDto { imported, skipped, tracks })
+                Ok(ImportReportDto { imported, skipped, tracks, existing })
             })
             .map_err(write_error)
     })

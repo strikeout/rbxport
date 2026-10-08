@@ -67,7 +67,7 @@ pub use limiter::{
     MAX_CEILING_DB, MAX_INPUT_GAIN_DB, MAX_RELEASE_MS, MIN_CEILING_DB, MIN_INPUT_GAIN_DB, MIN_RELEASE_MS,
 };
 pub use metronome::{ClickSound, ClickVolume, GridBeat, Metronome, MetronomeSettings};
-pub use mixer::{Band, Channel, ChannelSettings, Curve, Fade, MixerSettings};
+pub use mixer::{Band, Channel, Curve, Fade, MixerSettings};
 #[cfg(feature = "rubberband")]
 pub use rubberband::RubberBand;
 pub use stretch::{Stretcher, Varispeed, Wsola, MAX_RATIO, MIN_RATIO};
@@ -99,9 +99,6 @@ pub type Result<T> = std::result::Result<T, DeckError>;
 pub enum Deck {
     A,
     B,
-    /// The browser's preview voice. It has no mixer strip, no crossfader
-    /// position and no metronome: it joins the sum after the two decks.
-    P,
 }
 
 impl Deck {
@@ -109,7 +106,6 @@ impl Deck {
         match self {
             Deck::A => "a",
             Deck::B => "b",
-            Deck::P => "p",
         }
     }
 
@@ -117,14 +113,10 @@ impl Deck {
         match self {
             Deck::A => 0,
             Deck::B => 1,
-            Deck::P => 2,
         }
     }
 
-    /// The two decks of the mixer.
     pub const ALL: [Deck; 2] = [Deck::A, Deck::B];
-    /// Every voice the engine plays: the two decks and the preview.
-    pub const VOICES: [Deck; 3] = [Deck::A, Deck::B, Deck::P];
 }
 
 /// What the engine tells the interface about, outside the position tick.
@@ -137,19 +129,17 @@ pub enum DeckEvent {
 /// Where those go. Called from a decode thread, never from the audio callback.
 pub type EventSink = Arc<dyn Fn(DeckEvent) + Send + Sync>;
 
-/// Every voice at one instant, which is what one tick of the clock carries.
+/// Both decks at one instant, which is what one tick of the clock carries.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Snapshot {
     pub a: DeckSnapshot,
     pub b: DeckSnapshot,
-    /// The preview voice.
-    pub p: DeckSnapshot,
     pub sample_rate: u32,
 }
 
 impl Snapshot {
     pub fn any_playing(&self) -> bool {
-        self.a.playing || self.b.playing || self.p.playing
+        self.a.playing || self.b.playing
     }
 }
 
@@ -284,7 +274,7 @@ impl Master {
 }
 
 pub struct Engine {
-    decks: [deck::DeckHandle; 3],
+    decks: [deck::DeckHandle; 2],
     sink: Arc<dyn Sink>,
     sample_rate: u32,
     master: Arc<Master>,
@@ -319,14 +309,11 @@ impl Engine {
     where
         F: FnOnce(Render) -> Result<Arc<dyn Sink>>,
     {
-        let clocks: [Arc<DeckClock>; 3] = [
-            Arc::new(DeckClock::default()),
-            Arc::new(DeckClock::default()),
-            Arc::new(DeckClock::default()),
-        ];
+        let clocks: [Arc<DeckClock>; 2] =
+            [Arc::new(DeckClock::default()), Arc::new(DeckClock::default())];
 
-        let mut producers = Vec::with_capacity(3);
-        let mut readers = Vec::with_capacity(3);
+        let mut producers = Vec::with_capacity(2);
+        let mut readers = Vec::with_capacity(2);
         for clock in &clocks {
             let (producer, consumer) = rtrb::RingBuffer::<Block>::new(RING_BLOCKS);
             producers.push(producer);
@@ -399,9 +386,6 @@ impl Engine {
                     reader.mix_into(buffer);
                     let after = reader.clock.position();
                     let fader = if i == 0 { fade_a } else { fade_b };
-                    // The fader's own smoothing takes a muted deck down, so a
-                    // mute is as free of clicks as a crossfade.
-                    let fader = if strip.channels.get(i).is_some_and(ChannelSettings::muted) { 0.0 } else { fader };
                     let Some(settings) = strip.channels.get(i) else { continue };
                     channel.process(buffer, settings, curve, fader);
                     // The click after the strip, so an EQ cut does not muffle
@@ -412,16 +396,6 @@ impl Engine {
                             voice.render(metro, before, after, click_buffer, rate);
                         }
                     }
-                    for (sample, add) in chunk.iter_mut().zip(buffer.iter()) {
-                        *sample += *add;
-                    }
-                }
-                // The preview, past the strips: it is the DJ listening to a
-                // track in the browser, not a deck in the mix. The zip above
-                // stops at the two channels, so it is mixed here.
-                if let Some(preview) = readers.get_mut(Deck::P.index()) {
-                    buffer.fill(0.0);
-                    preview.mix_into(buffer);
                     for (sample, add) in chunk.iter_mut().zip(buffer.iter()) {
                         *sample += *add;
                     }
@@ -474,8 +448,8 @@ impl Engine {
         // Before the stream is started, so the first callback already knows it.
         master.set_rate(sample_rate);
 
-        let mut handles = Vec::with_capacity(3);
-        for (deck, (clock, producer)) in Deck::VOICES.into_iter().zip(clocks.iter().zip(producers)) {
+        let mut handles = Vec::with_capacity(2);
+        for (deck, (clock, producer)) in Deck::ALL.into_iter().zip(clocks.iter().zip(producers)) {
             clock.set_sample_rate(sample_rate);
             handles.push(deck::spawn(
                 deck,
@@ -486,9 +460,9 @@ impl Engine {
             )?);
         }
 
-        let decks: [deck::DeckHandle; 3] = handles
+        let decks: [deck::DeckHandle; 2] = handles
             .try_into()
-            .map_err(|_| DeckError::Device("could not start every deck".to_owned()))?;
+            .map_err(|_| DeckError::Device("could not start both decks".to_owned()))?;
         Ok(Self { decks, sink, sample_rate, master, mixer, limiter, metronome, metronomes })
     }
 
@@ -746,12 +720,15 @@ impl Engine {
 
     /// Moves the playhead by `ms` from where it is now. The move is worked
     /// out here, from the clock, so it does not land late by the time the
-    /// command took to arrive. A grid shift on a synced deck uses it.
+    /// command took to arrive. The phase lock and a grid shift on a synced
+    /// deck use it. A head in the pre-roll before zero moves from there, as
+    /// `seek_ms` puts it.
     pub fn move_ms(&self, deck: Deck, ms: f64) {
         let Some(handle) = self.deck(deck) else { return };
-        #[allow(clippy::cast_precision_loss, clippy::cast_possible_truncation, clippy::cast_sign_loss, reason = "a track is far under 2^52 frames, and the sum is clamped at zero")]
-        let to = (handle.clock().position() as f64 + ms * f64::from(self.sample_rate) / 1000.0).max(0.0) as u64;
-        self.seek_frames(deck, to);
+        let clock = handle.clock();
+        #[allow(clippy::cast_precision_loss, reason = "a track is far under 2^52 frames")]
+        let frames = clock.position() as f64 - clock.pre_roll() as f64;
+        self.seek_ms(deck, frames * 1000.0 / f64::from(self.sample_rate) + ms);
     }
 
     pub fn seek_ms(&self, deck: Deck, ms: f64) {
@@ -763,8 +740,7 @@ impl Engine {
     pub fn snapshot(&self) -> Snapshot {
         let a = self.decks.first().map(|d| d.clock().snapshot()).unwrap_or_default_snapshot();
         let b = self.decks.get(1).map(|d| d.clock().snapshot()).unwrap_or_default_snapshot();
-        let p = self.decks.get(2).map(|d| d.clock().snapshot()).unwrap_or_default_snapshot();
-        Snapshot { a, b, p, sample_rate: self.sample_rate }
+        Snapshot { a, b, sample_rate: self.sample_rate }
     }
 
     pub fn any_playing(&self) -> bool {

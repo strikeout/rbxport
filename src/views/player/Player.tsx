@@ -42,6 +42,7 @@ import {
   jumpSizeById,
   jumpStepSeconds,
   zoomBy,
+  createWheelZoomGate,
   needsRedraw,
   OVERDRAW,
   scrollOffset,
@@ -57,6 +58,12 @@ import {
   type CuePanel,
   type PadMode,
   beatLoopRange,
+  clampLoopBeats,
+  LOOP_BEATS_MAX,
+  LOOP_BEATS_MIN,
+  loopBeatsLabel,
+  resizedLoopRange,
+  wrapIntoLoop,
   tempoAtMs,
   tempoAnnotations,
   type BeatGrid as TrackBeatGrid,
@@ -1070,14 +1077,18 @@ export const Player = memo(function Player({
   /**
    * The wheel zooms, over the waveform it is pointing at.
    *
-   * One step per gesture whatever the device: a mouse notch arrives as about a
-   * hundred pixels and a trackpad as a stream of ones, so the size of the
-   * delta says nothing useful and only its sign is read.
+   * Travel is accumulated and rate-limited (see `createWheelZoomGate`): a
+   * trackpad streams many small events plus inertia, and a step per event
+   * ran through the whole zoom range in one swipe.
    */
+  const wheelGate = useRef(createWheelZoomGate());
   const wheelZoom = useCallback((event: React.WheelEvent<HTMLDivElement>) => {
     if (event.deltaY === 0) return;
     event.preventDefault();
-    setBars((current) => zoomBy(current, event.deltaY > 0 ? 1 : -1));
+    // Line and page modes (mice on some platforms) report lines, not pixels.
+    const px = event.deltaY * (event.deltaMode === 1 ? 33 : event.deltaMode === 2 ? 400 : 1);
+    const direction = wheelGate.current(px, event.timeStamp);
+    if (direction !== 0) setBars((current) => zoomBy(current, direction));
   }, [setBars]);
 
   const zoom = useCallback((by: number) => {
@@ -1281,7 +1292,7 @@ export const Player = memo(function Player({
     }
     loopOfBeats(loopBeats);
   }, [playback, activeLoop, loopOfBeats, loopBeats]);
-  /** The head in seconds, on the quantize grid when Q is on. */
+  /** The head in seconds, on the loop snap grid when Q is on. */
   const loopPoint = useCallback(() => {
     const ms = playback.positionNow() * 1000;
     return (loopSnap && loopSnap.times.length > 0 ? nearestBeatMs(loopSnap, ms) : ms) / 1000;
@@ -1301,23 +1312,33 @@ export const Player = memo(function Player({
     playback.setLoopActive(!playback.loop.active);
   }, [playback]);
   /**
-   * The beat loop length, from ‹ › or the half and double keys. A loop that
-   * is playing takes the new length at once, from its own in point. A head
-   * past the new out point keeps its place in the beat: it goes back by
-   * whole loops, not to the in point.
+   * Halve or double the loop, from ‹ › or the half and double keys. A loop
+   * that is playing takes the new length at once, from its own in point: a
+   * beat loop on the grid, a manual loop in time. A head past the new out
+   * point keeps its place in the beat: it goes back by whole loops, not to
+   * the in point. With no loop playing, only the next beat loop changes.
    */
-  const resizeLoop = useCallback((beats: number) => {
-    const next = Math.min(Math.max(beats, 0.25), 32);
-    setLoopBeats(next);
+  const resizeLoop = useCallback((factor: number) => {
     const loop = playback.loop;
-    if (!loop?.active || playback.idle) return;
-    const range = beatLoopRange(grid, null, loop.inSeconds * 1000, next);
-    if (!range) return;
-    const [from, to] = [range[0] / 1000, range[1] / 1000];
+    if (!loop?.active || playback.idle) {
+      setLoopBeats((beats) => clampLoopBeats(beats * factor));
+      return;
+    }
+    // Rounded, so a loop from an on-beat IN finds its beat on the grid.
+    const resized = resizedLoopRange(grid, Math.round(loop.inSeconds * 1000), loop.outSeconds * 1000, loopBeats, factor);
+    if (!resized) return;
+    setLoopBeats(resized.beats);
+    const [from, to] = [resized.range[0] / 1000, resized.range[1] / 1000];
     playback.setLoop(from, to);
     const head = playback.positionNow();
-    if (head >= to) seekInPhase(from + ((head - from) % (to - from)));
-  }, [playback, grid, seekInPhase]);
+    const wrapped = wrapIntoLoop(head, from, to);
+    if (wrapped !== head) playback.seek(wrapped);
+  }, [playback, grid, loopBeats]);
+  /** AU or MA. A change drops an IN that waits for its OUT. */
+  const chooseLoopMode = useCallback((mode: "auto" | "manual") => {
+    setLoopMode(mode);
+    setLoopIn(null);
+  }, []);
   /** OUT: the end of a waiting IN, or else RELOOP/EXIT. Both layouts. */
   const loopOut = useCallback(() => {
     if (loopIn !== null) markLoopOut();
@@ -1328,10 +1349,10 @@ export const Player = memo(function Player({
   // The handlers are the one-deck layout's, so the two behave the same.
   const dualLoop = useMemo(() => ({
     mode: loopMode,
-    onMode: setLoopMode,
+    onMode: chooseLoopMode,
     beats: loopBeats,
-    onShorter: () => resizeLoop(loopBeats / 2),
-    onLonger: () => resizeLoop(loopBeats * 2),
+    onShorter: () => resizeLoop(0.5),
+    onLonger: () => resizeLoop(2),
     active: activeLoop,
     pendingIn: loopIn !== null,
     canLoop: !playback.idle && grid.times.length >= 2,
@@ -1340,7 +1361,7 @@ export const Player = memo(function Player({
     onIn: loopMode === "auto" ? () => loopOfBeats(loopBeats) : markLoopIn,
     onOut: loopOut,
     hasLoop: playback.loop !== null,
-  }), [loopMode, loopBeats, resizeLoop, activeLoop, loopIn, playback.idle, playback.loop, grid.times.length,
+  }), [loopMode, chooseLoopMode, loopBeats, resizeLoop, activeLoop, loopIn, playback.idle, playback.loop, grid.times.length,
     autoLoop, loopOfBeats, markLoopIn, loopOut]);
   // A play is recorded after a minute of the track sounding, once per load,
   // when Preferences › Advanced › History says so and the library can be
@@ -1379,7 +1400,8 @@ export const Player = memo(function Player({
     [playback, seekInPhase],
   );
 
-
+  /** The phase lock waits until this time: see `checkPhase`. */
+  const lockHold = useRef(0);
   /**
    * PLAY. With BEAT SYNC lit and Q on, a stopped deck starts on the beat, as
    * a CDJ with SYNC and QUANTIZE does: it is put on its own nearest beat and
@@ -1389,8 +1411,6 @@ export const Player = memo(function Player({
    * for, so the deck is lined up with it and started at once. A deck already
    * playing, or one following nothing, simply toggles.
    */
-  /** The phase lock waits until this time: see `checkPhase`. */
-  const lockHold = useRef(0);
   const togglePlay = useCallback(() => {
     if (!playback.playing && synced && quantize) {
       const leader = peerSync?.();
@@ -1399,10 +1419,10 @@ export const Player = memo(function Player({
         const wait = leader.playing ? beatWait(leader) : null;
         if (wait !== null && grid.times.length > 0) {
           const onBeat = nearestBeatMs(grid, follower.position * 1000) / 1000;
-          // The move and the held start go as one command: see `playAfter`.
-          const moved = Math.abs(onBeat - follower.position) > 0.001;
-          playback.playAfter(wait * 1000, moved ? onBeat : undefined);
-          // A seek cancels the held start, so the lock waits for the deck to sound.
+          if (Math.abs(onBeat - follower.position) > 0.001) playback.seek(onBeat);
+          playback.playAfter(wait * 1000);
+          // The lock waits for the held start to end, so it does not move
+          // the deck before the deck sounds.
           lockHold.current = performance.now() + wait * 1000 + PHASE_SETTLE_MS;
           return;
         }
@@ -1737,11 +1757,11 @@ export const Player = memo(function Player({
           if (!event.repeat) reloopOrExit();
           break;
         case "loopHalf":
-          resizeLoop(loopBeats / 2);
+          resizeLoop(0.5);
           break;
         case "loopDouble":
           event.preventDefault();
-          resizeLoop(loopBeats * 2);
+          resizeLoop(2);
           break;
         case "sync":
           event.preventDefault();
@@ -2447,7 +2467,7 @@ export const Player = memo(function Player({
                 type="button"
                 className={styles.step}
                 aria-label="Delete memory cue"
-                title={tip(memoryCueEditReason ?? "Delete Memory Cue (V)")}
+                title={tip(memoryCueEditReason ?? "Delete Memory Cue (X)")}
                 disabled={!memory.canEdit}
                 onClick={memory.deleteAtHead}
               >
@@ -2468,7 +2488,7 @@ export const Player = memo(function Player({
                 data-on={loopMode === "auto" || undefined}
                 aria-pressed={loopMode === "auto"}
                 title={tip("Auto Beat Loop")}
-                onClick={() => setLoopMode("auto")}
+                onClick={() => chooseLoopMode("auto")}
               >
                 AU
               </button>
@@ -2478,7 +2498,7 @@ export const Player = memo(function Player({
                 data-on={loopMode === "manual" || undefined}
                 aria-pressed={loopMode === "manual"}
                 title={tip("Manual Loop")}
-                onClick={() => setLoopMode("manual")}
+                onClick={() => chooseLoopMode("manual")}
               >
                 MA
               </button>
@@ -2490,8 +2510,8 @@ export const Player = memo(function Player({
                   type="button"
                   className={styles.step}
                   aria-label="Shorter loop"
-                  disabled={loopBeats <= 0.25}
-                  onClick={() => resizeLoop(loopBeats / 2)}
+                  disabled={loopBeats <= LOOP_BEATS_MIN}
+                  onClick={() => resizeLoop(0.5)}
                 >
                   ‹
                 </button>
@@ -2501,18 +2521,18 @@ export const Player = memo(function Player({
                   data-on={activeLoop || undefined}
                   aria-pressed={activeLoop}
                   aria-label={activeLoop ? "Exit loop" : `${loopBeats} beat loop`}
-                  title={tip(activeLoop ? "Exit the loop" : `Loop ${loopBeats} beat${loopBeats === 1 ? "" : "s"} from here`)}
+                  title={tip(activeLoop ? "Exit the loop" : `${loopBeatsLabel(loopBeats)} Beat Loop`)}
                   disabled={playback.idle || grid.times.length < 2}
                   onClick={autoLoop}
                 >
-                  {loopBeats < 1 ? `1/${Math.round(1 / loopBeats)}` : loopBeats}
+                  {loopBeatsLabel(loopBeats)}
                 </button>
                 <button
                   type="button"
                   className={styles.step}
                   aria-label="Longer loop"
-                  disabled={loopBeats >= 32}
-                  onClick={() => resizeLoop(loopBeats * 2)}
+                  disabled={loopBeats >= LOOP_BEATS_MAX}
+                  onClick={() => resizeLoop(2)}
                 >
                   ›
                 </button>

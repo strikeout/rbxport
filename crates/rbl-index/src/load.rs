@@ -194,6 +194,7 @@ pub fn load_with_cue_reader(
     let t0 = Instant::now();
     let mut lib = Library::default();
     let cloud_root = rbl_db::cloud_contents_root();
+    let drive = db.drive_mapping();
     let mut stats = LoadStats::default();
 
     let artists = load_lookup(
@@ -231,7 +232,9 @@ pub fn load_with_cue_reader(
         "SELECT ID, Title, ArtistID, AlbumID, GenreID, LabelID, KeyID,
                 BPM, Length, Rating, ColorID, FolderPath, FileNameL,
                 AnalysisDataPath, DJPlayCount, StockDate, ReleaseDate, Commnt, Analysed,
-                ImagePath, BitRate, SampleRate, FileSize, ReleaseYear
+                ImagePath, BitRate, SampleRate, FileSize, ReleaseYear,
+                TrackNo, DiscNo, FileType, BitDepth, Lyricist, DateCreated,
+                DeliveryControl, DeliveryComment
          FROM djmdContent
          WHERE rb_local_deleted = 0",
     )?;
@@ -248,6 +251,10 @@ pub fn load_with_cue_reader(
     lib.artwork_path = StrColumn::with_capacity(expected, expected * 60);
     lib.date_added = StrColumn::with_capacity(expected, expected * 11);
     lib.release_date = StrColumn::with_capacity(expected, expected * 11);
+    lib.date_created = StrColumn::with_capacity(expected, expected * 11);
+    // Both empty on almost every row of the reference library.
+    lib.lyricist = StrColumn::with_capacity(expected, 0);
+    lib.message = StrColumn::with_capacity(expected, 0);
 
     let mut content_row: HashMap<u64, Row> = HashMap::with_capacity(expected);
 
@@ -278,14 +285,13 @@ pub fn load_with_cue_reader(
         lib.rating.push(clamp_u8(num(r, 9)?, 5));
         lib.color.push(clamp_u8(num(r, 10)?, u8::MAX));
 
-        // A cloud-library track's path names rekordbox's Dropbox folder, not
-        // a place on this disk; resolved here once so every reader sees a
+        // A cloud-library track's path names rekordbox's Dropbox folder, and
+        // a drive library's paths name the drive as it was mounted when the
+        // library was made; both resolved here once so every reader sees a
         // file that exists.
         let folder_path = text_or_default(r, 11)?;
-        lib.folder_path.push(&rbl_db::resolve_folder_path(
-            &folder_path,
-            cloud_root.as_deref(),
-        ));
+        let folder_path = drive.as_ref().map_or(folder_path.as_str().into(), |d| d.apply(&folder_path));
+        lib.folder_path.push(&rbl_db::resolve_folder_path(&folder_path, cloud_root.as_deref()));
         lib.file_name.push(&text_or_default(r, 12)?);
         lib.analysis_path.push(&text_or_default(r, 13)?);
         lib.artwork_path.push(&text_or_default(r, 19)?);
@@ -301,6 +307,16 @@ pub fn load_with_cue_reader(
         lib.file_size.push(u64::try_from(num(r, 22)?).unwrap_or(0));
         lib.year
             .push(u16::try_from(num(r, 23)?.clamp(0, i64::from(u16::MAX))).unwrap_or(0));
+        lib.track_number.push(clamp_u32(num(r, 24)?));
+        lib.disc_no.push(clamp_u16(num(r, 25)?));
+        lib.file_type.push(clamp_u8(num(r, 26)?, u8::MAX));
+        lib.bit_depth.push(clamp_u16(num(r, 27)?));
+        lib.lyricist.push(&text_or_default(r, 28)?);
+        lib.date_created.push(&text_or_default(r, 29)?);
+        // `"on"`, `""` or NULL on the reference library; only `"on"` ticks
+        // the box, as `rbl_db::details` reads it for the same column.
+        lib.publish.push(u8::from(text(r, 30)?.as_deref() == Some("on")));
+        lib.message.push(&text_or_default(r, 31)?);
 
         // Keyed by the parsed id, not the text: the map is only ever looked
         // up from a membership row, and parsing 75,386 of those is cheaper
@@ -329,6 +345,7 @@ pub fn load_with_cue_reader(
         load_histories(conn, &mut lib, &content_row, &mut stats)?;
         lib.set_tag_list(read_tag_list(conn, &content_row)?);
         lib.set_my_tags(read_my_tags(conn)?);
+        lib.set_track_my_tags(read_track_my_tags(conn, &content_row)?);
         load_search_extra(conn, &mut lib)?;
         if let Some(job) = cue_job {
             lib.set_cues(
@@ -568,10 +585,12 @@ pub fn reload_metadata(db: &Db, library: &mut Library, ids: &[String]) -> rusqli
         updates.push((row, fields));
     }
     let mut rating_changed = false;
+    let mut color_changed = false;
     let mut play_count_changed = false;
     let mut comments = HashMap::new();
     for (row, (rating, color, plays, comment)) in updates {
         rating_changed |= library.rating[row] != rating;
+        color_changed |= library.color[row] != color;
         play_count_changed |= library.play_count[row] != plays;
         library.rating[row] = rating;
         library.color[row] = color;
@@ -582,6 +601,9 @@ pub fn reload_metadata(db: &Db, library: &mut Library, ids: &[String]) -> rusqli
     }
     if rating_changed {
         library.rebuild_ranks(&[crate::SortColumn::Rating]);
+    }
+    if color_changed {
+        library.rebuild_ranks(&[crate::SortColumn::Color]);
     }
     if play_count_changed {
         library.rebuild_ranks(&[crate::SortColumn::PlayCount]);
@@ -623,8 +645,8 @@ pub fn reload_playlists(db: &Db, library: &Library) -> rusqlite::Result<Playlist
 /// under its category's id. Read-only on the reference library: 181 rows, 99
 /// live, four categories — `Lexicon Tags` and three named `Empty Category`,
 /// which is rekordbox's own name for an unused slot, not a placeholder of
-/// ours. Memberships (`djmdSongMyTag`) are deliberately not read; see
-/// `Library::my_tags`.
+/// ours. Memberships (`djmdSongMyTag`) are read separately, by
+/// `read_track_my_tags`.
 ///
 /// A library without the table opens with no categories rather than an error.
 fn read_my_tags(conn: &Connection) -> rusqlite::Result<Vec<TagCategory>> {
@@ -665,6 +687,30 @@ fn read_my_tags(conn: &Connection) -> rusqlite::Result<Vec<TagCategory>> {
         }
     }
     Ok(categories)
+}
+
+/// Reads which tracks carry which My Tag, for the intelligent playlists'
+/// `myTag` conditions: one `(row, tag)` pair per live `djmdSongMyTag` row
+/// whose track is in the collection, the tag id read as rekordbox compares
+/// it ([`crate::smart::my_tag_key`]). A library without the table has none.
+fn read_track_my_tags(conn: &Connection, content_row: &HashMap<u64, Row>) -> rusqlite::Result<Vec<(Row, i32)>> {
+    if !has_table(conn, "djmdSongMyTag") {
+        return Ok(Vec::new());
+    }
+    let mut stmt = conn.prepare(
+        "SELECT ContentID, MyTagID FROM djmdSongMyTag WHERE rb_local_deleted = 0",
+    )?;
+    let mut rows = stmt.query([])?;
+    let mut out = Vec::new();
+    while let Some(r) = rows.next()? {
+        let (Some(content), Some(tag)) = (text(r, 0)?, text(r, 1)?) else {
+            continue;
+        };
+        if let Some(&row) = content.parse::<u64>().ok().and_then(|id| content_row.get(&id)) {
+            out.push((row, crate::smart::my_tag_key(&tag)));
+        }
+    }
+    Ok(out)
 }
 
 /// Which pair of tables a list tree is read from.
@@ -877,6 +923,48 @@ mod refresh_tests {
         assert_eq!(library.artist_name(row), "Art�ist");
         assert_eq!(library.playlists().name(0), "List�");
         assert_eq!(stats.tracks, 40);
+    }
+
+    #[test]
+    fn the_browser_detail_columns_load_and_sort() {
+        let dir = tempfile::tempdir().unwrap();
+        let location =
+            rbl_db::fixture::build(dir.path(), rbl_db::fixture::Shape::default()).unwrap();
+        let db = Db::open(location, rbl_db::OpenMode::ReadWrite).unwrap();
+        let (first, second) = (rbl_db::fixture::track_id(0), rbl_db::fixture::track_id(1));
+        db.connection()
+            .execute(
+                "UPDATE djmdContent SET TrackNo = 12, DiscNo = 2, FileType = 11, BitDepth = 24,
+                        Lyricist = 'Words', DateCreated = '2023-08-06', DeliveryControl = 'on',
+                        DeliveryComment = 'hello'
+                 WHERE ID = ?1",
+                [&first],
+            )
+            .unwrap();
+        db.connection()
+            .execute("UPDATE djmdContent SET DeliveryControl = '' WHERE ID = ?1", [&second])
+            .unwrap();
+        let (library, _) = load(&db).unwrap();
+        let found = library.row_of(&first).unwrap();
+        let row = found as usize;
+        assert_eq!(library.track_number[row], 12);
+        assert_eq!(library.disc_no[row], 2);
+        assert_eq!(library.file_type[row], 11);
+        assert_eq!(library.bit_depth[row], 24);
+        assert_eq!(library.lyricist.get(row), "Words");
+        assert_eq!(library.date_created.get(row), "2023-08-06");
+        assert_eq!(library.publish[row], 1);
+        assert_eq!(library.message.get(row), "hello");
+        let other = library.row_of(&second).unwrap() as usize;
+        assert_eq!(library.publish[other], 0, "an empty DeliveryControl is unticked");
+        let spec = |sort| crate::ViewSpec {
+            source: crate::TrackSource::Collection, sort, descending: false,
+            query: String::new(), filter: crate::TrackFilter::default(),
+        };
+        let view = library.open_view(&spec(crate::SortColumn::PublishTrackInfo));
+        assert_eq!(view.rows.first().copied(), Some(found));
+        let view = library.open_view(&spec(crate::SortColumn::Message));
+        assert_eq!(view.rows.last().copied(), Some(found));
     }
 
     #[test]

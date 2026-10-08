@@ -101,9 +101,6 @@ pub struct ChannelSettings {
     bands: [AtomicU32; 3],
     /// Which of them are killed.
     kills: [AtomicBool; 3],
-    /// Whether the deck is silenced while a browser preview plays. The deck
-    /// keeps its transport; only its sound is taken out of the sum.
-    muted: AtomicBool,
 }
 
 impl Default for ChannelSettings {
@@ -116,7 +113,6 @@ impl Default for ChannelSettings {
                 AtomicU32::new(0.5_f32.to_bits()),
             ],
             kills: [AtomicBool::new(false), AtomicBool::new(false), AtomicBool::new(false)],
-            muted: AtomicBool::new(false),
         }
     }
 }
@@ -166,14 +162,6 @@ impl ChannelSettings {
         if let Some(slot) = self.kills.get(band.index()) {
             slot.store(killed, Ordering::Relaxed);
         }
-    }
-
-    pub fn set_muted(&self, muted: bool) {
-        self.muted.store(muted, Ordering::Relaxed);
-    }
-
-    pub fn muted(&self) -> bool {
-        self.muted.load(Ordering::Relaxed)
     }
 
     pub fn killed(&self, band: Band) -> bool {

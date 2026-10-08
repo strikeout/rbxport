@@ -23,6 +23,7 @@ use rbxport_lib::cues::{self, CueKind};
 use rbxport_lib::details;
 use rbxport_lib::dto::{RowDto, TrackFilterDto, TrackSourceDto, TreeNodeDto, ViewSpecDto};
 use rbxport_lib::player::{Player, TickDto};
+use rbxport_lib::preview::{Preview, PreviewStateDto};
 use rbxport_lib::state::AppState;
 use rbxport_lib::ErrorKind;
 use tauri::test::MockRuntime;
@@ -37,6 +38,8 @@ struct Shell {
     app: tauri::App<MockRuntime>,
     /// The engine's output, once a deck command has opened it.
     sink: Arc<Mutex<Option<Arc<NullSink>>>>,
+    /// The preview player's output, once something has been previewed.
+    preview_sink: Arc<Mutex<Option<Arc<NullSink>>>>,
     /// Every `library:changed` generation the interface would have seen.
     changes: Arc<Mutex<Vec<u32>>>,
     /// How many `tag-list:changed` the interface would have seen.
@@ -66,9 +69,18 @@ fn shell_with_shape(shape: Shape) -> Shell {
         Ok(opened as Arc<dyn Sink>)
     }));
 
+    let preview_sink: Arc<Mutex<Option<Arc<NullSink>>>> = Arc::new(Mutex::new(None));
+    let preview_slot = Arc::clone(&preview_sink);
+    let preview = Preview::with_sink(Box::new(move |render, _device, _wish| {
+        let opened = Arc::new(NullSink::new(RATE, render));
+        *preview_slot.lock().unwrap() = Some(Arc::clone(&opened));
+        Ok(opened as Arc<dyn Sink>)
+    }));
+
     let app = tauri::test::mock_app();
     app.manage(Arc::new(state));
     app.manage(Arc::new(player));
+    app.manage(Arc::new(preview));
 
     let changes: Arc<Mutex<Vec<u32>>> = Arc::new(Mutex::new(Vec::new()));
     let seen = Arc::clone(&changes);
@@ -82,7 +94,7 @@ fn shell_with_shape(shape: Shape) -> Shell {
     let tagged = Arc::clone(&tag_list_changes);
     app.listen("tag-list:changed", move |_| *tagged.lock().unwrap() += 1);
 
-    Shell { _dir: dir, app, sink, changes, tag_list_changes }
+    Shell { _dir: dir, app, sink, preview_sink, changes, tag_list_changes }
 }
 
 /// Runs a command the way the invoke handler does: to completion, on the
@@ -139,6 +151,30 @@ impl Shell {
 
     fn deck_state(&self) -> TickDto {
         run(commands::deck_state(self.player())).unwrap()
+    }
+
+    fn preview(&self) -> State<'_, Arc<Preview>> {
+        self.app.state::<Arc<Preview>>()
+    }
+
+    fn preview_state(&self) -> PreviewStateDto {
+        run(commands::preview_state(self.preview())).unwrap()
+    }
+
+    /// Pulls the preview's output until the condition holds, or gives up.
+    fn pull_preview_until(&self, what: &str, mut done: impl FnMut(&PreviewStateDto) -> bool) -> PreviewStateDto {
+        let deadline = Instant::now() + Duration::from_secs(5);
+        loop {
+            let state = self.preview_state();
+            if done(&state) {
+                return state;
+            }
+            assert!(Instant::now() < deadline, "gave up waiting for {what}: {state:?}");
+            if let Some(sink) = self.preview_sink.lock().unwrap().clone() {
+                sink.pull(512);
+            }
+            std::thread::sleep(Duration::from_millis(1));
+        }
     }
 
     /// Pulls the sink until the condition holds, or gives up. The engine
@@ -833,6 +869,39 @@ fn a_cue_added_through_the_command_is_read_back_and_announced() {
     assert!(announced.iter().all(|t| *t == track));
 }
 
+/// A drive library's Location, in the Info panel and the browser column, is
+/// the path rekordbox shows: the stored `FolderPath` with `BaseDBDrive`
+/// swapped for `CurrentDBDrive` (`replaceDrivePath`), not the raw column.
+#[test]
+fn a_drive_librarys_location_reads_under_the_drives_current_mount() {
+    let s = shell();
+    let track = track_id(3);
+    let location = s.state().location().unwrap();
+    fixture::point_at_audio(&location, 3, "/Volumes/Music/Tracks/a.mp3", 300).unwrap();
+    let writer = rbl_db::write::Writer::open(location, s._dir.path().join("drive-backups")).unwrap();
+    writer
+        .library()
+        .connection()
+        .execute("UPDATE djmdProperty SET BaseDBDrive = '/Volumes/Music/', CurrentDBDrive = '/Volumes/Music 1/'", [])
+        .unwrap();
+    drop(writer);
+
+    // On Windows a fixture folder off the default sits on a lettered drive,
+    // which rekordbox takes as the current drive instead.
+    let expected = if cfg!(windows) {
+        format!("{}/Tracks/a.mp3", &s._dir.path().to_string_lossy()[..2])
+    } else {
+        "/Volumes/Music 1/Tracks/a.mp3".to_owned()
+    };
+    let record = run(details::track_details(s.state(), track.clone())).unwrap();
+    assert_eq!(record.path, expected);
+
+    let (view, _) = s.open(collection_spec());
+    let rows = run(commands::fetch_rows(s.state(), view, 0, commands::MAX_ROWS, Some(vec!["location".into()]))).unwrap();
+    let row = rows.iter().find(|r| r.id == track).unwrap();
+    assert_eq!(row.extra.as_ref().unwrap()["location"], expected.as_str());
+}
+
 #[test]
 fn a_cue_added_outside_the_app_appears_without_reloading_the_library() {
     let s = shell();
@@ -1057,6 +1126,54 @@ fn the_two_decks_play_independently_and_the_master_level_is_the_engine_s() {
     let ended = s.pull_until("deck A to reach its end", |t| !t.a.playing && t.a.frames > 0);
     assert!(ended.b.playing);
     assert!(ended.b.frames > ended.a.frames);
+}
+
+#[test]
+fn a_waveform_click_previews_the_track_without_loading_a_deck() {
+    let s = shell();
+    let a = write_wav(&s._dir.path().join("deck.wav"), 3);
+    let b = write_wav(&s._dir.path().join("preview.wav"), 4);
+    let report = run(commands::import_files(
+        s.handle(),
+        s.state(),
+        vec![a.display().to_string(), b.display().to_string()],
+    ))
+    .unwrap();
+    let (on_deck, previewed) = (report.tracks[0].id.clone(), report.tracks[1].id.clone());
+
+    // Nothing previewed yet: no preview output opened, and an idle state.
+    assert_eq!(s.preview_state(), PreviewStateDto { track: None, playing: false, position_ms: 0.0, duration_ms: 0.0 });
+    assert!(s.preview_sink.lock().unwrap().is_none());
+
+    // Deck A is playing something else.
+    run(commands::deck_load(s.handle(), s.state(), s.player(), "a".into(), on_deck.clone(), 1)).unwrap();
+    s.pull_until("deck A to load", |t| t.a.loaded);
+    run(commands::deck_play(s.handle(), s.player(), "a".into())).unwrap();
+    s.pull_until("deck A to play", |t| t.a.playing && t.a.frames > 0);
+
+    // A click halfway across the second track's waveform.
+    run(commands::preview_play(s.handle(), s.state(), s.player(), s.preview(), previewed.clone(), 2_000.0)).unwrap();
+    // rekordbox outside PERFORMANCE mode pauses the decks for a preview.
+    let decks = s.pull_until("deck A to pause", |t| !t.a.playing);
+    assert_eq!(decks.a.load_id, 1, "the deck keeps its own track; the preview did not load onto it");
+    let playing = s.pull_preview_until("the preview to move past the click", |p| p.playing && p.position_ms > 2_050.0);
+    assert_eq!(playing.track.as_deref(), Some(previewed.as_str()));
+    assert!((playing.duration_ms - 4_000.0).abs() < 1.0);
+    assert!(playing.position_ms < 3_000.0, "started at the click, not the top: {playing:?}");
+
+    // A click on the same track moves it rather than reloading it.
+    run(commands::preview_play(s.handle(), s.state(), s.player(), s.preview(), previewed.clone(), 500.0)).unwrap();
+    let moved = s.pull_preview_until("the preview to move back", |p| p.playing && p.position_ms < 1_500.0);
+    assert!(moved.position_ms >= 500.0);
+
+    // Stopped where it is.
+    run(commands::preview_stop(s.preview())).unwrap();
+    s.pull_preview_until("the preview to stop", |p| !p.playing);
+
+    // A track whose file is not there is refused, as rekordbox refuses it.
+    std::fs::remove_file(&a).unwrap();
+    let err = run(commands::preview_play(s.handle(), s.state(), s.player(), s.preview(), on_deck, 0.0)).unwrap_err();
+    assert_eq!(err.kind, ErrorKind::NotFound);
 }
 
 #[test]
@@ -1296,6 +1413,53 @@ fn a_sync_writes_the_same_playlists_to_every_stick_and_each_stick_remembers_them
 }
 
 #[test]
+fn exporting_a_folder_writes_the_folder_with_its_playlists_inside() {
+    use rbxport_lib::dto::{SmartConditionDto, SmartRuleDto};
+    let s = shell();
+    let audio = s._dir.path().join("Folder Song.wav");
+    write_wav(&audio, 2);
+    let report = run(commands::import_files(s.handle(), s.state(), vec![audio.display().to_string()])).unwrap();
+    let song = report.tracks[0].id.clone();
+
+    run(commands::create_folder(s.handle(), s.state(), "Set".into(), ROOT.into())).unwrap();
+    let set = s.node("Set");
+    run(commands::create_playlist(s.handle(), s.state(), "Inside".into(), set.id.clone())).unwrap();
+    run(commands::add_tracks_to_playlist(s.handle(), s.state(), s.node("Inside").id, vec![song])).unwrap();
+    run(commands::create_folder(s.handle(), s.state(), "Later".into(), set.id.clone())).unwrap();
+    let rule = SmartRuleDto {
+        logic: "all".to_owned(),
+        conditions: vec![SmartConditionDto {
+            property: "name".to_owned(), operator: "11".to_owned(), left: "Folder Song".to_owned(), right: String::new(), unit: String::new(),
+        }],
+    };
+    run(commands::create_smart_playlist(s.handle(), s.state(), "Songs".into(), set.id.clone(), rule)).unwrap();
+
+    let stick = tempfile::tempdir().unwrap();
+    let written = run(commands::export_playlist(
+        s.handle(), s.state(), set.id.clone(), stick.path().display().to_string(), None, None, None,
+    ))
+    .unwrap();
+    assert_eq!(written.tracks, 1, "one track, however many playlists hold it");
+
+    let snapshot = rbl_export::snapshot::Snapshot::read(stick.path()).unwrap();
+    for library in [snapshot.one.expect("exportLibrary.db"), snapshot.legacy.expect("export.pdb")] {
+        let named = |name: &str| library.playlists.iter().find(|p| p.name == name).unwrap_or_else(|| panic!("no {name} in {:?}", library.playlists));
+        let set = named("Set");
+        assert!(set.folder, "the folder is a folder on the stick, not an empty playlist");
+        assert_eq!(set.parent, 0);
+        let later = named("Later");
+        assert!(later.folder && later.parent == set.id, "an empty folder under it keeps its place");
+        for name in ["Inside", "Songs"] {
+            let playlist = named(name);
+            assert!(!playlist.folder);
+            assert_eq!(playlist.parent, set.id);
+            assert_eq!(playlist.tracks.len(), 1, "{name}");
+        }
+        assert_eq!(library.playlists.len(), 4);
+    }
+}
+
+#[test]
 fn an_intelligent_playlist_is_made_from_a_rule_and_its_rule_is_edited() {
     use rbxport_lib::dto::{SmartConditionDto, SmartRuleDto};
     let s = shell();
@@ -1337,9 +1501,38 @@ fn an_intelligent_playlist_is_made_from_a_rule_and_its_rule_is_edited() {
         s.state(),
         "Nope".to_owned(),
         ROOT.to_owned(),
-        SmartRuleDto { logic: "all".to_owned(), conditions: vec![condition("myTag", "1", "x", "")] }
+        SmartRuleDto { logic: "all".to_owned(), conditions: vec![condition("hotCueCount", "1", "x", "")] }
     ))
     .is_err());
+}
+
+#[test]
+fn an_intelligent_playlist_on_a_my_tag_holds_the_tracks_carrying_it() {
+    // Issue #84: a rule on a My Tag opened empty and read back with no
+    // property, which the editor drew as "Album artist".
+    use rbl_db::fixture::MY_TAG_PEAK;
+    use rbxport_lib::dto::{SmartConditionDto, SmartRuleDto};
+    let s = shell();
+    run(details::set_my_tags(s.handle(), s.state(), track_id(3), vec![MY_TAG_PEAK.to_owned()])).unwrap();
+    run(details::set_my_tags(s.handle(), s.state(), track_id(5), vec![MY_TAG_PEAK.to_owned()])).unwrap();
+    let rule = SmartRuleDto {
+        logic: "all".to_owned(),
+        conditions: vec![SmartConditionDto {
+            property: "myTag".to_owned(),
+            operator: "8".to_owned(),
+            left: MY_TAG_PEAK.to_owned(),
+            right: String::new(),
+            unit: String::new(),
+        }],
+    };
+    run(commands::create_smart_playlist(s.handle(), s.state(), "Peak".to_owned(), ROOT.to_owned(), rule)).unwrap();
+    let node = s.node("Peak");
+    assert_eq!(s.playlist_rows(&node.id).len(), 2);
+    let read = run(commands::smart_rule(s.state(), node.id.clone())).unwrap();
+    assert_eq!(
+        (read.conditions[0].property.as_str(), read.conditions[0].operator.as_str(), read.conditions[0].left.as_str()),
+        ("myTag", "8", MY_TAG_PEAK)
+    );
 }
 
 #[test]

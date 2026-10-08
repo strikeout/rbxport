@@ -63,9 +63,19 @@ export type TrackSource =
 /** The Related Tracks section's criteria: rekordbox's own three. */
 export type RelatedCriterion = "bpmKey" | "genreRecent" | "artist" | "suggestion";
 
+/**
+ * The browser columns the backend can order by: every column rekordbox
+ * 7.2.11's own list sorts (its `BrowseHeaderManager::isSortableColumn`),
+ * except Hot Cue, whose rekordbox sort is by a field this column does not
+ * show. Each name is the column's own key.
+ */
 export type SortColumn =
   | "trackNo" | "title" | "artist" | "album" | "genre" | "label"
-  | "comment" | "bpm" | "key" | "duration" | "rating" | "dateAdded" | "releaseDate";
+  | "comment" | "bpm" | "key" | "duration" | "rating" | "djPlayCount"
+  | "dateAdded" | "releaseDate" | "size" | "year" | "sampleRate" | "bitrate"
+  | "color" | "fileName" | "location" | "composer" | "albumArtist" | "remixer"
+  | "originalArtist" | "mixName" | "discNo" | "trackNumber" | "fileType"
+  | "bitDepth" | "lyricist" | "dateCreated" | "publishTrackInfo" | "message";
 
 /**
  * What the backend sorts by. The columns, plus the key round the Camelot
@@ -124,10 +134,27 @@ export interface TreeNode {
 
 /** Why the library did not load at startup. */
 export type LibraryProblem =
-  /** No rekordbox library here at all; one can be made at `masterDb`. */
+  /** No library configured anywhere; one can be made at `masterDb`. */
   | { kind: "missing"; masterDb: string }
+  /**
+   * A library is configured at `masterDb`, not the default folder, and is
+   * not there, most often because its drive is not connected: rekordbox's
+   * "Cannot find Master Database" question. Nothing is made in its place;
+   * `useDefaultLibrary` switches to `defaultMasterDb`'s folder instead.
+   */
+  | { kind: "unavailable"; masterDb: string; defaultMasterDb: string }
   /** A library, or something in its place, that would not open. */
   | { kind: "failed"; message: string };
+
+/** One entry of Database management's drive list. */
+export interface DatabaseDrive {
+  /** The drive's name: its volume label, as rekordbox shows it. */
+  name: string;
+  /** The library's `master.db` on that drive. */
+  masterDb: string;
+  /** Whether it is the library open now. */
+  current: boolean;
+}
 
 export interface LibrarySummary {
   trackCount: number;
@@ -276,6 +303,26 @@ export interface Backend {
   createLibrary(): Promise<void>;
 
   /**
+   * The Yes of "Cannot find Master Database", once confirmed: sets
+   * rekordbox's library location to the default folder and loads what is
+   * there, or reports `missing` when there is nothing to load.
+   */
+  useDefaultLibrary(): Promise<void>;
+
+  /**
+   * Database management's drive list: the default drive when it holds a
+   * library, and every connected drive holding a rekordbox library.
+   */
+  databaseDrives(): Promise<DatabaseDrive[]>;
+
+  /**
+   * Switches to the library on a drive from `databaseDrives`, as choosing it
+   * in rekordbox's Database management does, and starts the app again on
+   * it. Rejects with the reason when it cannot.
+   */
+  switchLibrary(masterDb: string): Promise<void>;
+
+  /**
    * Fires after a cue edit with the id of the track whose cues changed.
    * A deck showing that track refetches its cues; nothing else has to move.
    */
@@ -398,7 +445,7 @@ export interface Backend {
     /** Remove RBXport-exported music outside the playlists being synced. */
     deleteUnlistedMusic?: boolean,
     /** Convert incompatible USB copies; undefined preserves the source format. */
-    compatibilityFormat?: "wav" | "mp3",
+    compatibilityFormat?: "wav" | "aiff" | "mp3",
   ): Promise<ExportReport | null>;
 
   /**
@@ -406,7 +453,7 @@ export interface Backend {
    * beside what the stick already holds. A later sync keeps them unless
    * deleteUnlistedMusic is enabled.
    */
-  exportTracksToDevice(tracks: string[], destination: string, defaults?: StickDefaults, compatibilityFormat?: "wav" | "mp3"): Promise<ExportReport>;
+  exportTracksToDevice(tracks: string[], destination: string, defaults?: StickDefaults, compatibilityFormat?: "wav" | "aiff" | "mp3"): Promise<ExportReport>;
 
   /**
    * rekordbox's reference browse categories and sort options: what a
@@ -496,7 +543,7 @@ export interface Backend {
    * interface (the first one when none is given) and serves the library to
    * every player that asks. Refused, with the reason, while rekordbox runs.
    */
-  startLinkExport(iface?: string, keyDisplay?: KeyDisplay, keySort?: "alphabetical" | "musical"): Promise<LinkStatus>;
+  startLinkExport(iface?: string, settings?: LinkDeviceSettings, keySort?: "alphabetical" | "musical"): Promise<LinkStatus>;
   stopLinkExport(): Promise<LinkStatus>;
   /** Tells a CDJ on the link to load a specific track from our library. */
   loadTrackOnLink(playerNumber: number, trackId: string): Promise<void>;
@@ -519,27 +566,27 @@ export interface Backend {
    * Position does not come back from any of these: it arrives on `onDeckTick`
    * ten times a second and the interface extrapolates between ticks.
    */
-  deckLoad(deck: VoiceId, trackId: string, loadId: number): Promise<void>;
-  deckUnload(deck: VoiceId): Promise<void>;
-  deckPlay(deck: VoiceId): Promise<void>;
+  deckLoad(deck: DeckId, trackId: string, loadId: number): Promise<void>;
+  deckUnload(deck: DeckId): Promise<void>;
+  deckPlay(deck: DeckId): Promise<void>;
   /**
    * Starts a deck after `delayMs` of silence, counted by the audio callback:
    * quantized play on a synced deck, held for the master's next beat.
    */
-  deckPlayAfter(deck: VoiceId, delayMs: number, positionMs?: number): Promise<void>;
-  deckPause(deck: VoiceId): Promise<void>;
-  deckSeek(deck: VoiceId, positionMs: number): Promise<void>;
+  deckPlayAfter(deck: DeckId, delayMs: number): Promise<void>;
+  deckPause(deck: DeckId): Promise<void>;
+  deckSeek(deck: DeckId, positionMs: number): Promise<void>;
   /** Moves the playhead by `byMs` from where the engine has it now. */
-  deckMove(deck: VoiceId, byMs: number): Promise<void>;
+  deckMove(deck: DeckId, byMs: number): Promise<void>;
   /**
    * Sets a loop between two points and turns it on. A head already past
    * the out point goes back to the in point. The deck rounds at the out
    * point itself, on the frame, with nothing faded at the seam.
    */
-  deckSetLoop(deck: VoiceId, inMs: number, outMs: number): Promise<void>;
+  deckSetLoop(deck: DeckId, inMs: number, outMs: number): Promise<void>;
   /** RELOOP (on): back in from the in point. EXIT (off): out, the range kept. */
-  deckLoopActive(deck: VoiceId, on: boolean): Promise<void>;
-  deckClearLoop(deck: VoiceId): Promise<void>;
+  deckLoopActive(deck: DeckId, on: boolean): Promise<void>;
+  deckClearLoop(deck: DeckId): Promise<void>;
   /**
    * Dragging the waveform like a record.
    *
@@ -548,9 +595,9 @@ export interface Backend {
    * pointer stops — rather than seeking. A seek per pointer move gives the
    * right place at the wrong speed: a burst of normal-speed audio each time.
    */
-  deckScrubBegin(deck: VoiceId): Promise<void>;
-  deckScrubTo(deck: VoiceId, positionMs: number): Promise<void>;
-  deckScrubEnd(deck: VoiceId): Promise<void>;
+  deckScrubBegin(deck: DeckId): Promise<void>;
+  deckScrubTo(deck: DeckId, positionMs: number): Promise<void>;
+  deckScrubEnd(deck: DeckId): Promise<void>;
   /** The master output level, 0 to +2 dB. It arrives back on the next tick. */
   setMasterLevel(level: number): Promise<void>;
   /**
@@ -598,9 +645,9 @@ export interface Backend {
    * A ratio rather than a BPM: what BPM that comes to depends on the track,
    * and the deck does not need to know the track's to play it faster.
    */
-  deckTempo(deck: VoiceId, tempo: number): Promise<void>;
+  deckTempo(deck: DeckId, tempo: number): Promise<void>;
   /** Master Tempo: whether the pitch is held while the speed changes. */
-  deckMasterTempo(deck: VoiceId, on: boolean): Promise<void>;
+  deckMasterTempo(deck: DeckId, on: boolean): Promise<void>;
   /** A click on every beat of the deck's grid while it plays. */
   deckMetronome(deck: DeckId, on: boolean): Promise<void>;
   /**
@@ -609,7 +656,7 @@ export interface Backend {
    */
   setMetronomeGrid(deck: DeckId, beats: [number, boolean][]): Promise<void>;
   /** The key, in semitones from the track's own; −12 to 12. */
-  deckKeyShift(deck: VoiceId, semitones: number): Promise<void>;
+  deckKeyShift(deck: DeckId, semitones: number): Promise<void>;
   /** Preferences › Audio › Metronome: which click (1 to 3) and how loud. */
   setMetronome(sound: 1 | 2 | 3, volume: "small" | "middle" | "large"): Promise<void>;
   /**
@@ -629,17 +676,21 @@ export interface Backend {
   setChannelKill(deck: DeckId, band: EqBand, killed: boolean): Promise<void>;
   /** The deck's gain, 0 to 2 — up to +6 dB, as a mixer's trim gives. */
   setChannelTrim(deck: DeckId, trim: number): Promise<void>;
-  /**
-   * Silences a deck in the sum, or brings it back. The deck keeps its
-   * transport: a browser preview in "mute" mode lets the decks run unheard.
-   */
-  setChannelMuted(deck: DeckId, muted: boolean): Promise<void>;
   /** The crossfader: 0 is deck A alone, 1 is deck B alone, 0.5 is both. */
   setCrossfade(position: number): Promise<void>;
   /** EQ or ISOLATOR — the bottom of each band's travel, and nothing else. */
   setEqCurve(isolator: boolean): Promise<void>;
   /** Both decks now, to anchor the interface when it starts. */
   deckState(): Promise<Tick>;
+  /**
+   * The browser's preview player: a click on a row's waveform plays the track
+   * from there without loading it onto a deck, and pauses the decks, as
+   * rekordbox does outside PERFORMANCE mode. Its own player, so it has no
+   * tick: the interface asks `previewState` while it plays.
+   */
+  previewPlay(trackId: string, positionMs: number): Promise<void>;
+  previewStop(): Promise<void>;
+  previewState(): Promise<PreviewState>;
   /** Both decks, ten times a second, and only while something is playing. */
   onDeckTick(listener: (tick: Tick) => void): () => void;
   /**
@@ -737,7 +788,7 @@ export interface Backend {
     /** Remove RBXport-exported music outside the playlists being synced. */
     deleteUnlistedMusic?: boolean,
     /** Convert incompatible USB copies; undefined preserves the source format. */
-    compatibilityFormat?: "wav" | "mp3",
+    compatibilityFormat?: "wav" | "aiff" | "mp3",
   ): Promise<SyncDeviceReport[]>;
 
   /** Missing source audio in the exact playlists selected for USB export. */
@@ -820,8 +871,14 @@ export interface Backend {
 /** Which deck. Two, named rather than indexed, as the mixer is. */
 export type DeckId = "a" | "b";
 
-/** Which voice of the engine: a deck, or `"p"`, the browser's preview. */
-export type VoiceId = DeckId | "p";
+/** The browser's preview player. */
+export interface PreviewState {
+  /** The track it holds, or null before anything was previewed. */
+  track: string | null;
+  playing: boolean;
+  positionMs: number;
+  durationMs: number;
+}
 
 /** Something an AppleScript asks of the window; see `src/lib/scripting.ts`. */
 export interface ScriptRequest {
@@ -940,8 +997,6 @@ export interface DeckTick {
 export interface Tick {
   a: DeckTick;
   b: DeckTick;
-  /** The browser's preview voice. */
-  p: DeckTick;
   /** The device's rate, which is what every frame count here is in. */
   sampleRate: number;
   /** The loudest sample the device was given last callback, per channel. */
@@ -973,7 +1028,7 @@ export interface Meters {
 
 /** A deck finishing a load, or failing one. */
 export interface DeckEvent {
-  deck: VoiceId;
+  deck: DeckId;
   /** The request this completion belongs to, so superseded loads are ignored. */
   loadId: number;
   totalFrames: number;
@@ -1244,6 +1299,8 @@ export interface AnalysisSettings {
   highPrecision: boolean;
   minBpm: number;
   maxBpm: number;
+  /** Add a memory cue on the new grid's first beat unless one is there. */
+  firstBeatCue: boolean;
 }
 
 /** What analysing one track found, now written to the library. */
@@ -1270,6 +1327,8 @@ export interface ImportReport {
   skipped: string[];
   /** The tracks that landed, so they can be queued for analysis. */
   tracks: { id: string; title: string }[];
+  /** Files that were already in the library, with their existing track ids. */
+  existing: { id: string; title: string }[];
 }
 
 /** What importing a rekordbox XML collection did. */
@@ -1655,6 +1714,14 @@ export type WaveformPosition = "center" | "left";
 export type OverviewWaveform = "half" | "full";
 export type KeyDisplay = "classic" | "alphanumeric";
 
+/** DJ System display settings advertised to players over LINK. */
+export interface LinkDeviceSettings {
+  waveformColor: WaveformColor;
+  waveformPosition: WaveformPosition;
+  overviewWaveform: OverviewWaveform;
+  keyDisplay: KeyDisplay;
+}
+
 /** The reference rows a fresh stick's `exportLibrary.db` starts from. */
 export interface ReferenceStickSettings {
   categories: MenuSlot[];
@@ -1691,8 +1758,10 @@ export interface DeviceSettings {
   /** The library rows were read; when false they are the reference rows and are not written. */
   hasLibrarySettings: boolean;
   deviceName: string;
-  /** `property.backGroundColorType`, carried but not understood. */
+  /** Background Color : OneLibrary — `property.backGroundColorType`, 0 Default, 1 Pink … 8 Purple. */
   backgroundColorType: number;
+  /** Background Color : Device Library — `export.pdb`'s `property` row, same values; null without one. */
+  deviceLibraryBackgroundColorType: number | null;
   categories: MenuSlot[];
   sorts: MenuSlot[];
   /** `menuItem` of the sort option shown beside the track name, or null for Not Specified. */

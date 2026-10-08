@@ -110,10 +110,27 @@ pub struct LimiterDto {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(tag = "kind", rename_all = "camelCase", rename_all_fields = "camelCase")]
 pub enum LibraryProblemDto {
-    /// No library here at all, and one can be made at `master_db`.
+    /// No library configured anywhere, and one can be made at `master_db`.
     Missing { master_db: String },
+    /// A library is configured at `master_db`, not the default folder, and
+    /// is not there — most often a drive that is not connected. rekordbox's
+    /// "Cannot find Master Database" question: nothing is made in its place,
+    /// and Yes sets the default folder's `default_master_db` instead.
+    Unavailable { master_db: String, default_master_db: String },
     /// There is a library, or something in its place, and it would not open.
     Failed { message: String },
+}
+
+/// One entry of Database management's drive list.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DatabaseDriveDto {
+    /// The drive's name: its volume label, as rekordbox shows it.
+    pub name: String,
+    /// The library's `master.db` on that drive.
+    pub master_db: String,
+    /// Whether it is the library open now.
+    pub current: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -271,6 +288,9 @@ pub struct ImportReportDto {
     pub skipped: Vec<String>,
     /// The tracks that landed, so they can be queued for analysis.
     pub tracks: Vec<ImportedTrackDto>,
+    /// Files that were already in the library, with their existing track ids.
+    /// Not counted as imported or skipped.
+    pub existing: Vec<ImportedTrackDto>,
 }
 
 /// One track an import added.

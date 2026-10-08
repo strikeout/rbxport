@@ -10,6 +10,7 @@ import {
   SEEDED_ROWS,
 } from "./session";
 import { DEFAULT_SORT } from "./viewSpec";
+import { CATALOGUE } from "./columns";
 
 describe("sanitiseSession", () => {
   it("accepts a session it wrote itself", () => {
@@ -29,6 +30,7 @@ describe("sanitiseSession", () => {
       subTreeWidth: 240,
       trafficLight: "b",
       waveformZoom: { a: 4, b: 32 },
+      dualControl: true,
     };
     expect(sanitiseSession(session)).toEqual(session);
   });
@@ -83,6 +85,18 @@ describe("sanitiseSession", () => {
       column: "bpm",
       descending: false,
     });
+    expect(sanitiseSession({ sort: { column: "djPlayCount", descending: true } }).sort).toEqual({
+      column: "djPlayCount",
+      descending: true,
+    });
+  });
+
+  it("restores a sort by every sortable heading", () => {
+    for (const column of CATALOGUE.filter((spec) => spec.sortable).map((spec) => spec.key)) {
+      expect(sanitiseSession({ sort: { column, descending: true } }).sort, column)
+        .toEqual({ column, descending: true });
+    }
+    expect(sanitiseSession({ sort: { column: "hotCue" } }).sort).toEqual(DEFAULT_SORT);
   });
 
   it("treats a missing panel flag as closed", () => {
@@ -118,5 +132,12 @@ describe("sanitiseSession", () => {
       DEFAULT_SESSION.waveformZoom,
     );
     expect(sanitiseSession({}).waveformZoom).toEqual(DEFAULT_SESSION.waveformZoom);
+  });
+
+  it("remembers DUAL CONTROL across sessions, off unless it was left on", () => {
+    expect(sanitiseSession({ dualControl: true }).dualControl).toBe(true);
+    expect(sanitiseSession({}).dualControl).toBe(false);
+    expect(sanitiseSession({ dualControl: "yes" }).dualControl).toBe(false);
+    expect(DEFAULT_SESSION.dualControl).toBe(false);
   });
 });

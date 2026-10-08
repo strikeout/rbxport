@@ -19,8 +19,8 @@ import {
   subtreeIds, toggle, visibleNodes, searchTree, type TreeSearchScope, type Source,
 } from "@/lib/tree";
 import { SourceRail } from "./SourceRail";
+import { browseListVars } from "@/lib/preferences";
 import { usePreferences } from "@/store/usePreferences";
-import { browseVars } from "@/lib/preferences";
 import type { TreeExpansion } from "@/lib/session";
 
 /**
@@ -303,6 +303,9 @@ const Row = memo(function Row({
   );
 });
 
+/** The measured row pitch, `--s-row-height`. */
+const TREE_ROW_H = 25;
+
 export interface TreeViewProps {
   nodes: readonly TreeNode[];
   selectedId: string | null;
@@ -373,6 +376,8 @@ export const TreeView = memo(function TreeView({
   onEjectDevice, ejectingDeviceId, deviceBusy = false,
 }: TreeViewProps) {
   const { advanced: { doubleClickToEdit }, view } = usePreferences();
+  // Browse › FontSize and Line Space apply to the tree as they do the list.
+  const listVars = browseListVars(view, TREE_ROW_H);
   const [query, setQuery] = useState("");
   const [scope, setScope] = useState<TreeSearchScope>("all");
   /** The tree menu: where it is, and which node it was opened on. */
@@ -549,8 +554,7 @@ export const TreeView = memo(function TreeView({
       <div className={styles.content}>
       <SearchField className={styles.search} value={query} onChange={setQuery} scope={scope} onScopeChange={setScope}
         options={TREE_SEARCH_OPTIONS} menuWidth={154} label="Search library tree" scopeLabel="Tree search scope" />
-      {/* Browse › FontSize, Bold and Line Space, as the track list has them. */}
-      <div className={styles.nodes} role="tree" ref={list} style={browseVars(view)}>
+      <div className={styles.nodes} role="tree" ref={list} style={listVars}>
         {visible.map((node) => (
           <Row
             key={node.id}

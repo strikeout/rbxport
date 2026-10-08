@@ -1074,6 +1074,28 @@ impl Writer {
 
     // ---------------------------------------------------------------- import
 
+    /// The id of the live track already imported from `path`, if any.
+    ///
+    /// Read-only. It lets a caller that was handed a file that is already in
+    /// the library (a drop onto a playlist) use the existing row rather than
+    /// treat the file as unimportable. The path is cleaned the same way
+    /// [`Self::import_file`] cleans it, so the two agree on what "already
+    /// there" means.
+    pub fn track_id_at(&self, path: &Path) -> Result<Option<String>> {
+        let path = normalized(path);
+        let folder = path.to_string_lossy().into_owned();
+        let id = self
+            .library
+            .connection()
+            .query_row(
+                "SELECT ID FROM djmdContent WHERE FolderPath = ?1 AND rb_local_deleted = 0 ORDER BY ID LIMIT 1",
+                params![folder],
+                |r| r.get::<_, String>(0),
+            )
+            .optional()?;
+        Ok(id)
+    }
+
     /// Adds a file to the library, returning the new track's id.
     ///
     /// The row shape is the one the reference library shows for a track made
@@ -2047,6 +2069,7 @@ impl Writer {
         if image.is_some_and(|p| !p.is_empty()) {
             return Ok(false);
         }
+        let path = self.real_path(&path);
         let Some(bytes) = crate::import::read_artwork(Path::new(&path))
             .map_err(|e| DbError::WriteRefused(e.to_string()))? else {
             return Ok(false);
@@ -2112,7 +2135,7 @@ impl Writer {
         let Some(folder) = folder else {
             return Err(DbError::WriteRefused(format!("no track {content}")));
         };
-        let path = crate::resolve_folder_path(&folder, None);
+        let path = crate::resolve_folder_path(&self.real_path(&folder), None);
         let tags = crate::import::read_tags(Path::new(&path))
             .map_err(|e| DbError::WriteRefused(e.to_string()))?;
         let stamp = time::now();
@@ -2262,6 +2285,12 @@ impl Writer {
             )));
         };
         self.touch_content(content, "KeyID", &Value::Text(id))
+    }
+
+    /// A stored `FolderPath` as rekordbox reads it. See
+    /// [`crate::Library::real_folder_path`].
+    fn real_path(&self, folder_path: &str) -> String {
+        self.library.real_folder_path(folder_path)
     }
 
     /// Points a track at a different file.

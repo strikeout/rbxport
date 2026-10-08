@@ -17,6 +17,29 @@ For a substantial change, explain the problem and proposed behavior before
 implementation. Keep the change scoped so a reviewer can understand its
 trigger, result, and validation without reading a chat history.
 
+## Feature proposals
+
+The core vision of rbxport is **fewer features**. It is not a version of
+rekordbox customized by the community: a project that keeps accumulating
+features ends up as the full-featured DJ software that rekordbox already is. You are welcome to fork
+rbxport and extend it however you like, but the core project stays small.
+
+Every contribution that adds a feature is carefully considered against this
+vision, and a working, well-tested feature can still be declined. Before writing
+code, open an issue that explains the problem and why it belongs in the core
+project. Bug fixes, performance improvements, compatibility work, and simplifying
+internal code are always in scope.
+
+A change must also respect two commitments:
+
+- **Compatibility.** rbxport aims to be fully compatible with the current
+  version of rekordbox and all the hardware that rekordbox supports. A change
+  must not break existing libraries, USB exports, or supported devices.
+- **Performance.** rbxport maintains its speed through the performance budget
+  in `perf-budgets.json`. A change must stay within it; run `pnpm budget` for
+  interface changes. Do not raise a budget gate to fit a new feature. See
+  [Development conventions](docs/development/conventions.md).
+
 ## Create a branch
 
 Branch from the target branch for the change, normally `dev`:
@@ -70,8 +93,10 @@ a maintainer must arrange appropriate validation before integration.
 
 Address review findings and rerun checks affected by the updates. Keep `main`
 and `dev` linear: rebase the topic branch onto its target, then integrate with
-a fast-forward. Do not create merge commits between them. Coordinate before
-force-pushing a published rebased branch; never move or replace a release tag.
+a fast-forward. Do not create merge commits between them. A rebased topic
+branch may be force-pushed with `--force-with-lease`, including one with an
+open PR. Never force-push `main` or `dev`, and never move or replace a
+release tag.
 
 Opening or merging a PR does not publish a release. Release operators follow
 [Releases](docs/development/releases.md) from a clean, pushed `dev` checkout.

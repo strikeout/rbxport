@@ -42,6 +42,7 @@ import {
 import { startWindowDrag, toggleWindowMaximise } from "@/lib/windowDrag";
 import { AppCost } from "@/views/topbar/AppCost";
 import { useLimiter } from "@/store/useLimiter";
+import { onPreviewError } from "@/store/usePreview";
 import { useUpdater } from "@/store/useUpdater";
 import { UpdateReadyNotice } from "@/views/update/UpdateReadyNotice";
 import { MasterOutputProvider, MasterOutputConnection, useMasterControls, useMasterDisplay } from "@/store/MasterOutput";
@@ -52,7 +53,7 @@ import { RightRail } from "@/views/browser/RightRail";
 import { DevicePanel } from "@/views/devices/DevicePanel";
 import { useColumns, type ColumnContext } from "@/store/useColumns";
 import { useExplorer } from "@/store/useExplorer";
-import { isLooseId } from "@/lib/explorer";
+import { importLoose, isLooseId } from "@/lib/explorer";
 import { childrenOf, containerOf, parentFor, withSources } from "@/lib/tree";
 import { JUMP_SIZE_ID } from "@/lib/player";
 import type { Deck as SyncDeck } from "@/lib/sync";
@@ -62,16 +63,15 @@ import { MixerStrip } from "@/views/player/MixerStrip";
 import { DualZoom } from "@/views/player/DualDeck";
 import type { PreferencesTarget } from "@/views/settings/Preferences";
 import { PreferencesProvider, usePreferencesStore } from "@/store/usePreferences";
-import { PreviewProvider } from "@/store/usePreview";
 import type { PreferencePane } from "@/lib/preferences";
 import { answer, deckNumber, setPlaying, whenLoaded, withSetting, type ScriptHandler } from "@/lib/scripting";
 import { useAnalysis } from "@/store/useAnalysis";
 import { AnalysisDialog } from "@/views/analysis/AnalysisDialog";
-import { NewLibraryDialog } from "@/views/library/NewLibraryDialog";
+import { NewLibraryDialog, type LibraryQuestion } from "@/views/library/NewLibraryDialog";
 import type { QueueItem } from "@/lib/queue";
 import { TrackFilter } from "@/views/browser/TrackFilter";
 import { EMPTY_FILTER, toSpecFilter, type FilterState } from "@/lib/trackFilter";
-import type { AnalysisResult, FilterValues, LinkPeerSeen, LinkStatus, SmartRule } from "@/ipc/types";
+import type { AnalysisResult, FilterValues, LinkPeerSeen, LinkStatus, SmartRule, TrackLookups } from "@/ipc/types";
 import { useTooltip } from "@/store/usePreferences";
 import { useTranslation } from "@/i18n";
 import { nativeMenuLabels } from "@/lib/nativeMenu";
@@ -177,8 +177,9 @@ function AppBody() {
   // Why the library is not there, when it is not. Shown instead of "Loading…",
   // which is a lie once the load has failed.
   const [loadError, setLoadError] = useState<string | null>(null);
-  // Where a new library would go, when there is none at all to load.
-  const [missingLibrary, setMissingLibrary] = useState<string | null>(null);
+  // What to ask when there is no library to load: none anywhere, or one
+  // configured on a drive that is not connected.
+  const [missingLibrary, setMissingLibrary] = useState<LibraryQuestion | null>(null);
   const [summary, setSummary] = useState<LibrarySummary | null>(null);
   // Do not write the empty bootstrap selection over the session while the
   // backend is still restoring the node that was open at exit. WebKit gets
@@ -321,9 +322,8 @@ function AppBody() {
   /**
    * The zoom cluster the two-deck layout shares, registered the same way:
    * one + RST − over the line where the two details meet, and a press
-   * zooms both decks. The two decks share one zoom whatever DUAL CONTROL
-   * says, so the wheel on either detail zooms both: equal bars give equal
-   * beat spacing, and two synced grids can be compared by eye.
+   * zooms both decks. DUAL CONTROL off, each deck still keeps its own zoom
+   * for the wheel; the cluster is simply pressed on both.
    */
   const zoomA = useRef<(by: number) => void>(() => {});
   const zoomB = useRef<(by: number) => void>(() => {});
@@ -342,10 +342,14 @@ function AppBody() {
     zoomA.current(by);
     zoomB.current(by);
   }, []);
-  const [dual, setDual] = useState(false);
+  // Remembered across runs: a DUAL CONTROL left on comes back on.
+  const [dual, setDual] = useState(restored.dualControl);
   const [waveformZoom, setWaveformZoom] = useState(restored.waveformZoom);
   const setZoomA = useCallback((bars: number) => {
     setWaveformZoom((zoom) => zoom.a === bars ? zoom : { ...zoom, a: bars });
+  }, []);
+  const setZoomB = useCallback((bars: number) => {
+    setWaveformZoom((zoom) => zoom.b === bars ? zoom : { ...zoom, b: bars });
   }, []);
   const [dualBars, setDualBars] = useState(restored.waveformZoom.a);
   const setLinkedZoom = useCallback((bars: number) => {
@@ -558,6 +562,8 @@ function AppBody() {
   const [playerError, setPlayerError] = useState<string | null>(null);
   const report = useCallback((text: string) => setNote({ text, failed: false }), []);
   const refuse = useCallback((text: string) => setNote({ text, failed: true }), []);
+  // A waveform click whose track could not be previewed says why.
+  useEffect(() => onPreviewError(refuse), [refuse]);
   const openLog = useCallback(() => {
     void getBackend()
       .then((backend) => backend.openLog())
@@ -643,8 +649,13 @@ function AppBody() {
       });
       const applyProblem = (problem: LibraryProblem | null) => {
         if (cancelled || problem === null) return;
-        if (problem.kind === "missing") setMissingLibrary(problem.masterDb);
-        else setLoadError(problem.message);
+        if (problem.kind === "failed") {
+          // A library that is there and would not open is reported, not asked about.
+          setMissingLibrary(null);
+          setLoadError(problem.message);
+        } else {
+          setMissingLibrary(problem);
+        }
       };
       stopProblem = backend.onLibraryProblem(applyProblem);
       // Asked as well: with no library at all the backend gives up before
@@ -705,7 +716,12 @@ function AppBody() {
     try {
       const status = on ? await backend.startLinkExport(
         linkInterface ?? undefined,
-        stickDefaults.keyDisplay,
+        {
+          waveformColor: stickDefaults.waveformColor,
+          waveformPosition: stickDefaults.waveformPosition,
+          overviewWaveform: stickDefaults.overviewWaveform,
+          keyDisplay: stickDefaults.keyDisplay,
+        },
         stickDefaults.linkKeySort,
       ) : await backend.stopLinkExport();
       setLink(status);
@@ -713,7 +729,8 @@ function AppBody() {
     } finally {
       setLinkBusy(false);
     }
-  }, [linkInterface, stickDefaults.keyDisplay, stickDefaults.linkKeySort]);
+  }, [linkInterface, stickDefaults.keyDisplay, stickDefaults.linkKeySort,
+    stickDefaults.overviewWaveform, stickDefaults.waveformColor, stickDefaults.waveformPosition]);
   const toggleLink = useCallback(() => {
     void setLinkOn(!link?.on);
   }, [link?.on, setLinkOn]);
@@ -923,7 +940,6 @@ function AppBody() {
       const ids = draggedTracks?.ids;
       setDraggedTracks(null);
       if (!ids || ids.length === 0) return;
-      if (ids.some(refuseLoose)) return;
       if (advancedPrefs.protectLibrary) {
         refuse(refusal(true));
         return;
@@ -931,9 +947,19 @@ function AppBody() {
       void (async () => {
         const backend = await getBackend();
         try {
-          await backend.edits.addTracksToPlaylist(playlistId, [...ids]);
+          // Rows dragged out of the Explorer that the library does not hold
+          // are imported on the way in, as Add To Playlist does with them.
+          const { ids: trackIds, report: imported } = await importLoose(ids, (paths) => backend.importPaths(paths));
+          if (imported && analysisPrefs.auto && imported.tracks.length > 0) analysis.add(imported.tracks);
           const name = tree.find((n) => n.id === playlistId)?.name ?? "the playlist";
-          report(`Added ${ids.length} track${ids.length === 1 ? "" : "s"} to ${name}.`);
+          const skipped = imported?.skipped.length ?? 0;
+          const tail = skipped > 0 ? `; ${skipped} skipped` : "";
+          if (trackIds.length === 0) {
+            refuse(`Nothing added to ${name}${tail}.`);
+            return;
+          }
+          await backend.edits.addTracksToPlaylist(playlistId, trackIds);
+          report(`Added ${trackIds.length} track${trackIds.length === 1 ? "" : "s"} to ${name}${tail}.`);
         } catch (e) {
           // The refusal that matters is Rekordbox holding the database; say so
           // rather than letting the drop look as if it worked.
@@ -941,7 +967,7 @@ function AppBody() {
         }
       })();
     },
-    [draggedTracks, tree, report, refuse, refuseLoose, advancedPrefs.protectLibrary],
+    [draggedTracks, tree, report, refuse, advancedPrefs.protectLibrary, analysisPrefs.auto, analysis],
   );
 
   /**
@@ -961,14 +987,17 @@ function AppBody() {
         try {
           const backend = await getBackend();
           const imported = await backend.importPaths(paths);
-          if (imported.tracks.length > 0) {
-            await backend.edits.addTracksToPlaylist(playlistId, imported.tracks.map((t) => t.id));
+          // Files the library already held still belong in the playlist.
+          const toAdd = [...imported.tracks, ...imported.existing];
+          if (toAdd.length > 0) {
+            await backend.edits.addTracksToPlaylist(playlistId, toAdd.map((t) => t.id));
           }
           const total = imported.imported + imported.skipped.length;
+          const already = imported.existing.length > 0 ? `; ${imported.existing.length} already in the library` : "";
           report(
             imported.skipped.length === 0
-              ? `Imported ${imported.imported} of ${total} files into ${name}.`
-              : `Imported ${imported.imported} of ${total} files into ${name}; ${imported.skipped.length} skipped.`,
+              ? `Imported ${imported.imported} of ${total} files into ${name}${already}.`
+              : `Imported ${imported.imported} of ${total} files into ${name}; ${imported.skipped.length} skipped${already}.`,
           );
           setTree(await backend.playlistTree());
           if (analysisPrefs.auto && imported.tracks.length > 0) analysis.add(imported.tracks);
@@ -1135,6 +1164,23 @@ function AppBody() {
   const [smartEditor, setSmartEditor] = useState<
     { mode: "create"; parent: string; name: string; rule: SmartRule } | { mode: "edit"; id: string; name: string; rule: SmartRule } | null
   >(null);
+  // The My Tags a rule can name, read each time the editor opens so a tag
+  // made since is there to pick.
+  const [smartTags, setSmartTags] = useState<TrackLookups["myTagCategories"]>([]);
+  const smartEditorOpen = smartEditor !== null;
+  useEffect(() => {
+    if (!smartEditorOpen) return;
+    let live = true;
+    void getBackend()
+      .then((b) => b.trackLookups())
+      .then((l) => {
+        if (live) setSmartTags(l.myTagCategories);
+      })
+      .catch(() => {});
+    return () => {
+      live = false;
+    };
+  }, [smartEditorOpen]);
   const createSmartPlaylistIn = useCallback(
     (node: TreeNode) => {
       setSmartEditor({
@@ -1404,10 +1450,11 @@ function AppBody() {
         try {
           const imported = await backend.importPaths(paths);
           const total = imported.imported + imported.skipped.length;
+          const already = imported.existing.length > 0 ? `; ${imported.existing.length} already in the library` : "";
           await afterWrite(
             imported.skipped.length === 0
-              ? `Imported ${imported.imported} of ${total} files.`
-              : `Imported ${imported.imported} of ${total} files; ${imported.skipped.length} skipped.`,
+              ? `Imported ${imported.imported} of ${total} files${already}.`
+              : `Imported ${imported.imported} of ${total} files; ${imported.skipped.length} skipped${already}.`,
           );
           if (analysisPrefs.auto && imported.tracks.length > 0) analysis.add(imported.tracks);
         } catch (e) {
@@ -1436,16 +1483,26 @@ function AppBody() {
     [report, refuse],
   );
 
+  // Add To Playlist. Files the Explorer lists that the library does not hold
+  // are imported first, as rekordbox's menu offers it over them [OBS 7,
+  // Winrig 2026-10-08] and as a file dropped on a playlist already is.
   const addToPlaylist = useCallback(
     (playlist: string, ids: readonly string[]) => {
       if (ids.length === 0) return;
       const name = tree.find((n) => n.id === playlist)?.name ?? "the playlist";
       write(async (backend) => {
-        const added = await backend.edits.addTracksToPlaylist(playlist, [...ids]);
-        return added === 0 ? `Already in ${name}.` : `Added ${ids.length} track${ids.length === 1 ? "" : "s"} to ${name}.`;
+        const { ids: trackIds, report: imported } = await importLoose(ids, (paths) => backend.importPaths(paths));
+        if (imported && analysisPrefs.auto && imported.tracks.length > 0) analysis.add(imported.tracks);
+        const skipped = imported?.skipped.length ?? 0;
+        const tail = skipped > 0 ? `; ${skipped} skipped` : "";
+        if (trackIds.length === 0) return `Nothing added to ${name}${tail}.`;
+        const added = await backend.edits.addTracksToPlaylist(playlist, trackIds);
+        return added === 0
+          ? `Already in ${name}${tail}.`
+          : `Added ${trackIds.length} track${trackIds.length === 1 ? "" : "s"} to ${name}${tail}.`;
       });
     },
-    [write, tree],
+    [write, tree, analysisPrefs.auto, analysis],
   );
 
   const addToTagList = useCallback(
@@ -1618,10 +1675,11 @@ function AppBody() {
           return;
         }
         const total = imported.imported + imported.skipped.length;
+        const already = imported.existing.length > 0 ? `; ${imported.existing.length} already in the library` : "";
         report(
           imported.skipped.length === 0
-            ? `Imported ${imported.imported} of ${total} files.`
-            : `Imported ${imported.imported} of ${total} files; ${imported.skipped.length} skipped.`,
+            ? `Imported ${imported.imported} of ${total} files${already}.`
+            : `Imported ${imported.imported} of ${total} files; ${imported.skipped.length} skipped${already}.`,
         );
         setTree(await backend.playlistTree());
         // Auto Analysis in Preferences: what just landed goes straight into
@@ -2143,8 +2201,9 @@ function AppBody() {
       subTreeWidth,
       trafficLight,
       waveformZoom,
+      dualControl: dual,
     });
-  }, [sessionReady, treeWidth, selectedNode, treeExpansion, sortState, infoOpen, subOpen, filterOpen, tree, screen, layout, subWidth, subTreeWidth, trafficLight, waveformZoom]);
+  }, [sessionReady, treeWidth, selectedNode, treeExpansion, sortState, infoOpen, subOpen, filterOpen, tree, screen, layout, subWidth, subTreeWidth, trafficLight, waveformZoom, dual]);
 
   // The last screen, handed to the table until the backend answers. Dropped as
   // soon as the library is up, so a stale row cannot outlive its replacement —
@@ -2214,7 +2273,6 @@ function AppBody() {
   ]);
   return (
     <PreferencesProvider value={prefs}>
-    <PreviewProvider>
     <MasterOutputConnection mode={viewPrefs.vuMeter} />
     <div className={styles.window} data-platform={platform.linux ? "linux" : platform.mac ? "mac" : "windows"}>
       <div
@@ -2255,7 +2313,7 @@ function AppBody() {
                 className={styles.dual}
                 aria-label="Dual control"
                 aria-pressed={dual}
-                title={tip("Link the beat jump across both decks.")}
+                title={tip("Link the waveform controls and beat jump across both decks.")}
                 data-on={dual || undefined}
                 onClick={() => setDual((was) => !was)}
               >
@@ -2284,8 +2342,8 @@ function AppBody() {
             transportSlot={deckCount(layout) > 1 ? transportA : null}
             dual={deckCount(layout) > 1}
             publishZoom={deckCount(layout) > 1 ? publishZoom.a : undefined}
-            bars={deckCount(layout) > 1 ? dualBars : waveformZoom.a}
-            onBars={deckCount(layout) > 1 ? setLinkedZoom : setZoomA}
+            bars={deckCount(layout) > 1 && dual ? dualBars : waveformZoom.a}
+            onBars={deckCount(layout) > 1 && dual ? setLinkedZoom : setZoomA}
             {...(deckCount(layout) > 1 ? linked : {})}
             publishSync={publishSync.a}
             {...(deckCount(layout) > 1 ? { peerSync: peerSync.a } : {})}
@@ -2295,9 +2353,9 @@ function AppBody() {
             onSyncToggle={deckCount(layout) > 1 ? toggleSync.a : undefined}
             leaderBpmX100={syncMaster === "a" ? null : leaderBpmX100}
             onPlayingBpm={reportPlayingBpm.a}
-            onKeyShift={reportKeyShift.a}
             publishGridFollow={publishGridFollow.a}
             onGridNudge={gridNudged.a}
+            onKeyShift={reportKeyShift.a}
             readOnly={readOnly}
           />
           {deckCount(layout) > 1 ? (
@@ -2318,8 +2376,8 @@ function AppBody() {
               flipped
               dual
               publishZoom={publishZoom.b}
-              bars={dualBars}
-              onBars={setLinkedZoom}
+              bars={dual ? dualBars : waveformZoom.b}
+              onBars={dual ? setLinkedZoom : setZoomB}
               {...linked}
               publishSync={publishSync.b}
               peerSync={peerSync.b}
@@ -2329,9 +2387,9 @@ function AppBody() {
               onSyncToggle={toggleSync.b}
               leaderBpmX100={syncMaster === "b" ? null : leaderBpmX100}
               onPlayingBpm={reportPlayingBpm.b}
-              onKeyShift={reportKeyShift.b}
               publishGridFollow={publishGridFollow.b}
               onGridNudge={gridNudged.b}
+              onKeyShift={reportKeyShift.b}
               readOnly={readOnly}
             />
           ) : null}
@@ -2518,16 +2576,21 @@ function AppBody() {
         />
       ) : null}
       {missingLibrary !== null ? (
-        <NewLibraryDialog masterDb={missingLibrary}
+        <NewLibraryDialog key={missingLibrary.kind} problem={missingLibrary}
           onCreate={async () => {
             await (await getBackend()).createLibrary();
             // The ready event that follows loads it like any other start.
             setMissingLibrary(null);
           }}
+          // Closed by the ready event when the default folder has a library,
+          // or asked again by the problem event when it is empty.
+          onUseDefault={async () => (await getBackend()).useDefaultLibrary()}
+          onConfirm={async (message, labels) => (await getBackend()).confirm(message, labels)}
           onQuit={() => { void getBackend().then(backend => backend.closeWindow()); }} />
       ) : null}
       {analysisSelection !== null ? (
         <AnalysisDialog count={analysisSelection.length} initialMode={analysisPrefs.mode}
+          initialFirstBeatCue={analysisPrefs.firstBeatCue}
           onCancel={() => setAnalysisSelection(null)}
           onConfirm={settings => {
             if (readOnly) { refuse(ANALYSIS_REFUSED); return; }
@@ -2559,6 +2622,7 @@ function AppBody() {
           title={smartEditor.mode === "create" ? "Create New Intelligent Playlist" : "Edit the Intelligent Playlist"}
           name={smartEditor.name}
           rule={smartEditor.rule}
+          myTags={smartTags}
           onSave={saveSmartPlaylist}
           onCancel={() => setSmartEditor(null)}
         />
@@ -2633,7 +2697,6 @@ function AppBody() {
         }}
       />
     </div>
-    </PreviewProvider>
     </PreferencesProvider>
   );
 }

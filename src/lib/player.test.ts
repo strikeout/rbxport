@@ -5,6 +5,9 @@ import {
   tempoAnnotations,
   beatAtMs,
   beatLoopRange,
+  loopBeatsLabel,
+  resizedLoopRange,
+  wrapIntoLoop,
   BEATS_PER_BAR,
   DETAIL_BARS,
   beatsIn,
@@ -30,6 +33,7 @@ import {
   isClick,
   ZOOM_STEPS,
   zoomBy,
+  createWheelZoomGate,
   tempoChangeAtMs,
   phraseKind,
   phraseSpans,
@@ -872,6 +876,51 @@ describe("beatLoopRange", () => {
   });
 });
 
+describe("resizedLoopRange", () => {
+  const grid = {
+    times: new Uint32Array([1000, 1500, 2000, 2500, 3000]),
+    numbers: new Uint8Array([1, 2, 3, 4, 1]),
+    tempos: new Uint16Array([12_000, 12_000, 12_000, 12_000, 12_000]),
+  };
+  it("halves and doubles a beat loop on the grid, from its own in point", () => {
+    expect(resizedLoopRange(grid, 1000, 3000, 4, 0.5)).toEqual({ range: [1000, 2000], beats: 2 });
+    expect(resizedLoopRange(grid, 1000, 2000, 2, 2)).toEqual({ range: [1000, 3000], beats: 4 });
+  });
+  it("scales a manual loop by its own length and keeps the beat loop length", () => {
+    // Three beats by hand, with the beat loop length at four.
+    expect(resizedLoopRange(grid, 1000, 2500, 4, 0.5)).toEqual({ range: [1000, 1750], beats: 4 });
+  });
+  it("keeps the length within a quarter beat and 32 beats", () => {
+    expect(resizedLoopRange(grid, 1000, 1125, 0.25, 0.5)).toEqual({ range: [1000, 1125], beats: 0.25 });
+    expect(resizedLoopRange(grid, 1000, 1100, 4, 0.5)).toEqual({ range: [1000, 1125], beats: 4 });
+    expect(resizedLoopRange(grid, 1000, 13_000, 4, 2)).toEqual({ range: [1000, 17_000], beats: 4 });
+  });
+  it("has nothing to count on without a grid", () => {
+    expect(resizedLoopRange(NO_BEATS, 1000, 3000, 4, 0.5)).toBeNull();
+  });
+});
+
+describe("wrapIntoLoop", () => {
+  it("leaves a head inside the loop where it is", () => {
+    expect(wrapIntoLoop(1.5, 1, 2)).toBe(1.5);
+    expect(wrapIntoLoop(0.5, 1, 2)).toBe(0.5);
+  });
+  it("takes a head past the end back by whole loops, in time", () => {
+    expect(wrapIntoLoop(2, 1, 2)).toBe(1);
+    expect(wrapIntoLoop(2.25, 1, 2)).toBe(1.25);
+    expect(wrapIntoLoop(4.5, 1, 2)).toBe(1.5);
+  });
+});
+
+describe("loopBeatsLabel", () => {
+  it("writes a fraction of a beat as rekordbox does", () => {
+    expect(loopBeatsLabel(0.25)).toBe("1/4");
+    expect(loopBeatsLabel(0.5)).toBe("1/2");
+    expect(loopBeatsLabel(1)).toBe("1");
+    expect(loopBeatsLabel(32)).toBe("32");
+  });
+});
+
 describe("beatAtMs", () => {
   const grid = {
     times: new Uint32Array([1000, 1500, 2000]),
@@ -931,5 +980,31 @@ describe("tempoAnnotations", () => {
     expect(tempoAnnotations(gridOf([17400, 17400, 17400, 17400, 16500, 15000, 12800]))[1])
       .toEqual({ fromMs: 2000, toMs: 3000, fromBpmX100: 17400, toBpmX100: 12800 });
     expect(tempoAnnotations(NO_BEATS)).toEqual([]);
+  });
+});
+
+describe("createWheelZoomGate", () => {
+  it("steps once for a mouse notch", () => {
+    const gate = createWheelZoomGate();
+    expect(gate(100, 0)).toBe(1);
+    expect(gate(-120, 1000)).toBe(-1);
+  });
+
+  it("turns a trackpad swipe and its inertia tail into one or two steps", () => {
+    const gate = createWheelZoomGate();
+    let steps = 0;
+    // 80 events of 8px over 800ms, 16ms apart.
+    for (let i = 0; i < 80; i++) steps += Math.abs(gate(8, i * 10));
+    expect(steps).toBeGreaterThan(0);
+    expect(steps).toBeLessThanOrEqual(6);
+  });
+
+  it("drops partial travel after a pause or a reversal", () => {
+    const gate = createWheelZoomGate();
+    expect(gate(60, 0)).toBe(0);
+    expect(gate(60, 1000)).toBe(0);
+    expect(gate(-60, 1010)).toBe(0);
+    // The old direction's travel was discarded, not netted against.
+    expect(gate(-60, 1020)).toBe(-1);
   });
 });

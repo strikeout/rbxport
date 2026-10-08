@@ -99,21 +99,8 @@ export function trafficLightCodes(key: string, reach: TrafficLightReach): string
   return codes;
 }
 
-/**
- * How the harmony moves from a loaded track in `reference` to a row in `key`.
- * For a loaded track in 2A —
- *   same      2A
- *   relative  2B, the relative major or minor
- *   adjacent  1A/3A, one step round the wheel
- *   diagonal  1B/3B, one step round the wheel and across
- */
-export type TrafficLightJump = "same" | "relative" | "adjacent" | "diagonal";
-
-/** The jump from `reference` to `key`, or null when the row does not light. */
-export function trafficLightJump(key: string, reference: string, reach: TrafficLightReach): TrafficLightJump | null {
+/** Whether a row in `key` lights up against a loaded track in `reference`. */
+export function trafficLightLit(key: string, reference: string, reach: TrafficLightReach): boolean {
   const code = toCamelot(key);
-  const index = code === "" ? -1 : trafficLightCodes(reference, reach).indexOf(code);
-  // trafficLightCodes lists the codes in this order: 1 same, 1 relative,
-  // 2 adjacent, 2 diagonal.
-  return index < 0 ? null : (["same", "relative", "adjacent", "adjacent", "diagonal", "diagonal"] as const)[index] ?? null;
+  return code !== "" && trafficLightCodes(reference, reach).includes(code);
 }

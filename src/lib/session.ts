@@ -68,6 +68,8 @@ export interface Session {
   trafficLight: TrafficLightSource;
   /** Bars visible across each deck's detail waveform. */
   waveformZoom: { a: number; b: number };
+  /** Whether DUAL CONTROL, which links both decks' zoom and beat jump, was on. */
+  dualControl: boolean;
 }
 
 /**
@@ -109,12 +111,20 @@ export const DEFAULT_SESSION: Session = {
   subTreeWidth: DEFAULT_SUB_TREE_WIDTH,
   trafficLight: "master",
   waveformZoom: { a: DETAIL_BARS, b: DETAIL_BARS },
+  dualControl: false,
 };
 
-const SORT_COLUMNS: readonly string[] = [
-  "trackNo", "title", "artist", "album", "genre", "label", "comment",
-  "bpm", "key", "duration", "rating", "dateAdded", "releaseDate",
-];
+/** Every sort column, so a new one cannot be left out of what is restored. */
+const SORTABLE: Readonly<Record<SortColumn, true>> = {
+  trackNo: true, title: true, artist: true, album: true, genre: true, label: true,
+  comment: true, bpm: true, key: true, duration: true, rating: true, djPlayCount: true,
+  dateAdded: true, releaseDate: true, size: true, year: true, sampleRate: true,
+  bitrate: true, color: true, fileName: true, location: true, composer: true,
+  albumArtist: true, remixer: true, originalArtist: true, mixName: true, discNo: true,
+  trackNumber: true, fileType: true, bitDepth: true, lyricist: true, dateCreated: true,
+  publishTrackInfo: true, message: true,
+};
+const SORT_COLUMNS: readonly string[] = Object.keys(SORTABLE);
 
 function sortOrDefault(value: unknown): SortState {
   if (typeof value !== "object" || value === null) return DEFAULT_SORT;
@@ -199,6 +209,7 @@ export function sanitiseSession(value: unknown): Session {
             b: zoomOrDefault((raw.waveformZoom as { b?: unknown }).b),
           }
         : { a: DETAIL_BARS, b: DETAIL_BARS },
+    dualControl: raw.dualControl === true,
   };
 }
 

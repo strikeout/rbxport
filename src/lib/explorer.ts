@@ -7,7 +7,7 @@
  * and collapses the same way the playlists do. Pure functions over plain data,
  * so the shape is testable without a backend or a DOM.
  */
-import type { ExplorerChildren, ExplorerRoot, TreeNode } from "@/ipc/types";
+import type { ExplorerChildren, ExplorerRoot, ImportReport, TreeNode } from "@/ipc/types";
 
 /** The heading's id. Selecting it opens an empty Explorer, as rekordbox does. */
 export const EXPLORER_ROOT_ID = "explorer";
@@ -22,6 +22,43 @@ export const EXPLORER_ROOT_ID = "explorer";
  */
 export function isLooseId(id: string): boolean {
   return id.startsWith("file:");
+}
+
+/**
+ * Whether a menu over these rows should treat them as files the library
+ * does not hold. It follows the rows, not the view: a file the Explorer
+ * lists stops being loose once imported, and its menu is a track's again
+ * without leaving the Explorer. Any loose row in a mixed selection makes it
+ * loose, so no write is offered that the loose file would turn away.
+ */
+export function hasLooseId(ids: Iterable<string>): boolean {
+  for (const id of ids) if (isLooseId(id)) return true;
+  return false;
+}
+
+/**
+ * The track ids behind a selection that may hold files the library does
+ * not: those are imported first, and stand for the tracks they became, or
+ * that already held them. Track ids pass through in their own order, the
+ * imported ones follow. `report` is the import's, or `null` with nothing to
+ * import.
+ */
+export async function importLoose(
+  ids: readonly string[],
+  importPaths: (paths: string[]) => Promise<ImportReport>,
+): Promise<{ ids: string[]; report: ImportReport | null }> {
+  const paths = ids.filter(isLooseId).map((id) => id.slice("file:".length));
+  const tracks = ids.filter((id) => !isLooseId(id));
+  if (paths.length === 0) return { ids: tracks, report: null };
+  const report = await importPaths(paths);
+  const seen = new Set(tracks);
+  for (const t of [...report.tracks, ...report.existing]) {
+    if (!seen.has(t.id)) {
+      seen.add(t.id);
+      tracks.push(t.id);
+    }
+  }
+  return { ids: tracks, report };
 }
 
 const PREFIX = "dir:";

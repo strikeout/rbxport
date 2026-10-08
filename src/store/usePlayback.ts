@@ -14,7 +14,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { getBackend } from "@/ipc/client";
-import type { AppErrorDto, Backend, Tick, VoiceId } from "@/ipc/types";
+import type { AppErrorDto, Backend, DeckId, Tick } from "@/ipc/types";
 import { canPlay } from "@/ipc/audio";
 import { extrapolate, follow, NO_ANCHOR, pinned, SNAP_SECONDS, type Anchor } from "@/lib/clock";
 
@@ -39,12 +39,8 @@ export interface Playback {
    * Starts a stopped deck after `delayMs` of silence: quantized play on a
    * synced deck, held for the master's next beat. The engine counts the wait
    * in its own output frames; the playhead here waits the same time.
-   *
-   * `fromSeconds` moves the playhead first, in the same command as the start.
-   * A separate seek can reach the engine after the start, and a seek cancels
-   * the wait, so the deck then starts at once and off the beat.
    */
-  playAfter: (delayMs: number, fromSeconds?: number) => void;
+  playAfter: (delayMs: number) => void;
   seek: (seconds: number) => void;
   /**
    * Moves the head by `seconds` from where the engine has it. A seek worked
@@ -130,7 +126,7 @@ export interface DeckLoop {
 }
 
 /** The preview player is deck A; the 2-player layout adds B. */
-const DEFAULT_DECK: VoiceId = "a";
+const DEFAULT_DECK: DeckId = "a";
 
 /**
  * How long letting go waits for the seek it asked for before trusting ticks
@@ -163,7 +159,7 @@ interface HeldLoad {
   loadId: number;
 }
 
-const held = new Map<VoiceId, HeldLoad | null>();
+const held = new Map<DeckId, HeldLoad | null>();
 let nextLoadId = 0;
 
 function allocateLoadId(): number {
@@ -189,7 +185,7 @@ export function reasonFrom(error: unknown): string {
   return FALLBACK;
 }
 
-export function usePlayback(trackId: string | null, DECK: VoiceId = DEFAULT_DECK, renderPosition = true): Playback {
+export function usePlayback(trackId: string | null, DECK: DeckId = DEFAULT_DECK, renderPosition = true): Playback {
   const [playing, setPlaying] = useState(false);
   const [tempo, setTempoState] = useState(1);
   const [masterTempo, setMasterTempoState] = useState(false);
@@ -349,7 +345,7 @@ export function usePlayback(trackId: string | null, DECK: VoiceId = DEFAULT_DECK
   /** Takes a tick as the truth about where the deck is. */
   const anchorOn = useCallback(
     (tick: Tick) => {
-      const deck = tick[DECK];
+      const deck = DECK === "b" ? tick.b : tick.a;
       const target = targetLoad.current;
       if (target !== null && deck.loadId !== undefined && deck.loadId !== target.loadId) return;
       if (target !== null && loadPending.current) completeLoad(target);
@@ -490,7 +486,7 @@ export function usePlayback(trackId: string | null, DECK: VoiceId = DEFAULT_DECK
       };
       // What the deck holds right now, so a reload does not start at zero.
       const state = await backend.deckState();
-      const deck = state[DECK];
+      const deck = DECK === "b" ? state.b : state.a;
       const target = targetLoad.current;
       if (target !== null && deck.loadId !== undefined && deck.loadId !== target.loadId && !loadPending.current) {
         beginLoad(target.trackId, true);
@@ -606,26 +602,13 @@ export function usePlayback(trackId: string | null, DECK: VoiceId = DEFAULT_DECK
   }, [idle, isReady, playing, DECK]);
 
   const playAfter = useCallback(
-    (delayMs: number, fromSeconds?: number) => {
+    (delayMs: number) => {
       if (idle || playing) return;
       const wait = Number.isFinite(delayMs) ? Math.max(0, delayMs) : 0;
-      const from = fromSeconds !== undefined && Number.isFinite(fromSeconds)
-        ? Math.max(-5, fromSeconds)
-        : null;
       desiredPlaying.current = true;
       desiredDelay.current = wait;
       const version = ++transportVersion.current;
-      if (from !== null) {
-        anchor.current = {
-          ...anchor.current,
-          frames: anchor.current.sampleRate > 0 ? from * anchor.current.sampleRate : 0,
-        };
-        setPosition(from);
-        emit(from);
-      }
       if (!isReady()) {
-        // The load applies the seek before the start, in order.
-        if (from !== null) deferredSeek.current = from;
         setPlaying(true);
         anchor.current = pinned(anchor.current, positionRef.current, performance.now());
         return;
@@ -637,7 +620,7 @@ export function usePlayback(trackId: string | null, DECK: VoiceId = DEFAULT_DECK
         try {
           const backend = await getBackend();
           if (version !== transportVersion.current || !isReady()) return;
-          await backend.deckPlayAfter(DECK, wait, from === null ? undefined : from * 1000);
+          await backend.deckPlayAfter(DECK, wait);
         } catch (failure) {
           desiredPlaying.current = false;
           setPlaying(false);
@@ -645,7 +628,7 @@ export function usePlayback(trackId: string | null, DECK: VoiceId = DEFAULT_DECK
         }
       })();
     },
-    [idle, isReady, playing, DECK, emit, setPosition],
+    [idle, isReady, playing, DECK],
   );
 
   const seek = useCallback(

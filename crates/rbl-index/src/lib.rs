@@ -68,6 +68,12 @@ pub struct Library {
     pub artwork_path: StrColumn,
     pub date_added: StrColumn,
     pub release_date: StrColumn,
+    /// `djmdContent.DateCreated`, `YYYY-MM-DD` as stored.
+    pub date_created: StrColumn,
+    /// `djmdContent.Lyricist`, plain text on the track.
+    pub lyricist: StrColumn,
+    /// `djmdContent.DeliveryComment`, the browser's Message column.
+    pub message: StrColumn,
 
     pub artist: Vec<u32>,
     pub album: Vec<u32>,
@@ -90,6 +96,18 @@ pub struct Library {
     /// `djmdContent.ReleaseYear`; 0 when unknown. Two bytes a row, for the
     /// intelligent playlists that ask for a year.
     pub year: Vec<u16>,
+    /// `djmdContent.TrackNo`: the tag's track number, not the view's `#`.
+    pub track_number: Vec<u32>,
+    /// `djmdContent.DiscNo`.
+    pub disc_no: Vec<u16>,
+    /// `djmdContent.FileType`, rekordbox's own code: 1 MP3, 4 M4A, 5 FLAC,
+    /// 11 WAV, 12 AIFF.
+    pub file_type: Vec<u8>,
+    /// `djmdContent.BitDepth`.
+    pub bit_depth: Vec<u16>,
+    /// 1 where `djmdContent.DeliveryControl` is `"on"`: the browser's
+    /// Publish track information box.
+    pub publish: Vec<u8>,
 
     pub artists: Interner,
     pub albums: Interner,
@@ -140,12 +158,18 @@ pub struct Library {
     /// The My Tag categories and their tags, by name only.
     ///
     /// `djmdMyTag` is 181 rows on the reference library (99 live), read so
-    /// the filter bar can head its tag columns the way rekordbox does. Which
-    /// tracks carry which tag — `djmdSongMyTag` — is **not** read: it holds no
-    /// rows at all on the reference library, so what it would cost on a
-    /// tagged one is `[UNKNOWN]`, and the tag columns stay inert until a
-    /// library with tags in it has been measured.
+    /// the filter bar can head its tag columns the way rekordbox does.
     pub(crate) my_tags: Vec<TagCategory>,
+    /// Which My Tags each track carries, from `djmdSongMyTag`, for the
+    /// intelligent playlists' `myTag` conditions: row `r`'s tags are
+    /// `my_tag_keys[my_tag_bounds[r]..my_tag_bounds[r + 1]]`, each id as
+    /// [`smart::my_tag_key`] reads it. Empty bounds mean no track carries a
+    /// tag. The reference library's table holds no rows, so what it costs
+    /// on a heavily tagged library is `[UNKNOWN]`; it is one `i32` a
+    /// membership and one `u32` a track. The filter bar's tag columns do
+    /// not use it.
+    pub(crate) my_tag_bounds: Vec<u32>,
+    pub(crate) my_tag_keys: Vec<i32>,
 }
 
 // Copy-on-write snapshots keep readers on a consistent set of track columns.
@@ -164,6 +188,9 @@ impl Clone for Library {
             artwork_path: self.artwork_path.clone(),
             date_added: self.date_added.clone(),
             release_date: self.release_date.clone(),
+            date_created: self.date_created.clone(),
+            lyricist: self.lyricist.clone(),
+            message: self.message.clone(),
             artist: self.artist.clone(),
             album: self.album.clone(),
             genre: self.genre.clone(),
@@ -179,6 +206,11 @@ impl Clone for Library {
             sample_rate: self.sample_rate.clone(),
             file_size: self.file_size.clone(),
             year: self.year.clone(),
+            track_number: self.track_number.clone(),
+            disc_no: self.disc_no.clone(),
+            file_type: self.file_type.clone(),
+            bit_depth: self.bit_depth.clone(),
+            publish: self.publish.clone(),
             artists: self.artists.clone(),
             albums: self.albums.clone(),
             genres: self.genres.clone(),
@@ -197,6 +229,8 @@ impl Clone for Library {
             ranks: self.ranks.clone(),
             search: self.search.clone(),
             my_tags: self.my_tags.clone(),
+            my_tag_bounds: self.my_tag_bounds.clone(),
+            my_tag_keys: self.my_tag_keys.clone(),
         }
     }
 }
@@ -542,6 +576,70 @@ impl Library {
         self.my_tags = tags;
     }
 
+    /// The My Tag ids on row `row`, as [`smart::my_tag_key`] reads them.
+    #[must_use]
+    pub fn my_tag_keys(&self, row: usize) -> &[i32] {
+        let (Some(&start), Some(&end)) = (self.my_tag_bounds.get(row), self.my_tag_bounds.get(row + 1)) else {
+            return &[];
+        };
+        self.my_tag_keys.get(start as usize..end as usize).unwrap_or_default()
+    }
+
+    /// Sets every track's My Tags from `(row, id)` pairs. A pair naming a
+    /// row past the end is dropped.
+    pub(crate) fn set_track_my_tags(&mut self, mut pairs: Vec<(Row, i32)>) {
+        pairs.retain(|&(row, _)| (row as usize) < self.count);
+        if pairs.is_empty() {
+            self.my_tag_bounds = Vec::new();
+            self.my_tag_keys = Vec::new();
+            return;
+        }
+        pairs.sort_unstable();
+        pairs.dedup();
+        let mut bounds = Vec::with_capacity(self.count + 1);
+        let mut keys = Vec::with_capacity(pairs.len());
+        let mut next = pairs.iter().peekable();
+        for row in 0..self.count {
+            bounds.push(u32::try_from(keys.len()).unwrap_or(u32::MAX));
+            while let Some(&&(r, key)) = next.peek() {
+                if r as usize != row {
+                    break;
+                }
+                keys.push(key);
+                next.next();
+            }
+        }
+        bounds.push(u32::try_from(keys.len()).unwrap_or(u32::MAX));
+        self.my_tag_bounds = bounds;
+        self.my_tag_keys = keys;
+    }
+
+    /// The raw columns behind [`my_tag_keys`](Self::my_tag_keys), for the
+    /// snapshot.
+    pub(crate) fn my_tag_parts(&self) -> (&[u32], &[i32]) {
+        (&self.my_tag_bounds, &self.my_tag_keys)
+    }
+
+    /// Restores the columns [`my_tag_parts`](Self::my_tag_parts) gave.
+    /// `false`, leaving the library untouched, when they do not describe
+    /// this library's rows.
+    pub(crate) fn set_my_tag_parts(&mut self, bounds: Vec<u32>, keys: Vec<i32>) -> bool {
+        let valid = if bounds.is_empty() {
+            keys.is_empty()
+        } else {
+            bounds.len() == self.count + 1
+                && bounds.first() == Some(&0)
+                && bounds.last().map(|&b| b as usize) == Some(keys.len())
+                && bounds.windows(2).all(|w| w.first() <= w.get(1))
+        };
+        if !valid {
+            return false;
+        }
+        self.my_tag_bounds = bounds;
+        self.my_tag_keys = keys;
+        true
+    }
+
     /// Reads the playlist tree. The guard is held only for the read.
     pub fn playlists(&self) -> parking_lot::RwLockReadGuard<'_, Playlists> {
         self.playlists.read()
@@ -614,14 +712,23 @@ impl Library {
                 + self.key.capacity()
                 + self.bpm_x100.capacity()
                 + self.length_sec.capacity()
-                + self.play_count.capacity())
+                + self.bitrate.capacity()
+                + self.sample_rate.capacity()
+                + self.track_number.capacity())
                 * 4
+            + self.file_size.capacity() * 8
             + (self.artist_ids.capacity()
                 + self.album_ids.capacity()
                 + self.genre_ids.capacity()
                 + self.label_ids.capacity())
                 * 4
-            + self.year.capacity() * 2
+            + (self.year.capacity()
+                + self.play_count.capacity()
+                + self.disc_no.capacity()
+                + self.bit_depth.capacity())
+                * 2
+            + self.file_type.capacity()
+            + self.publish.capacity()
             + self.rating.capacity()
             + self.color.capacity()
             + self.analysed.capacity();
@@ -634,6 +741,9 @@ impl Library {
             + self.artwork_path.heap_bytes()
             + self.date_added.heap_bytes()
             + self.release_date.heap_bytes()
+            + self.date_created.heap_bytes()
+            + self.lyricist.heap_bytes()
+            + self.message.heap_bytes()
             + self.search.heap_bytes()
             + self
                 .search_extra
@@ -654,7 +764,9 @@ impl Library {
             .my_tags
             .iter()
             .map(|c| c.name.capacity() + c.tags.iter().map(String::capacity).sum::<usize>())
-            .sum();
+            .sum::<usize>()
+            + self.my_tag_bounds.capacity() * 4
+            + self.my_tag_keys.capacity() * 4;
         let playlists = self.playlists().ids.capacity() * 8
             + self.playlists().names.heap_bytes()
             + self.playlists().smart.heap_bytes()
